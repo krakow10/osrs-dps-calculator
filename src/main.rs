@@ -19,14 +19,9 @@ fn main() {
     };
 
     // PvM: NPC with 87 def and 60 def bonus, slayer helm bonus active.
-    let npc = Target {
-        is_player: false,
+    let npc = Target::Npc {
         defence: 87,
-        defence_boost: 0,
-        defence_prayer: DefencePrayer::None,
-        attack_style: AttackStyle::Aggressive,
         defence_bonus: 60,
-        protect_from_melee: false,
     };
     println!("PvM (NPC 87 def / 60 def bonus, slayer helm):");
     let r = MeleeDps::calculate(&attacker, &npc, GearBonus::Slayer);
@@ -35,8 +30,7 @@ fn main() {
 
     // PvP: 99 def player, +15 boost, piety, defensive style,
     // 122 def bonus, Protect from Melee active.
-    let player = Target {
-        is_player: true,
+    let player = Target::Player {
         defence: 99,
         defence_boost: 15,
         defence_prayer: DefencePrayer::Piety,

@@ -174,20 +174,29 @@ pub struct Attacker {
 
 /// The target being attacked (an NPC or a player).
 #[derive(Debug, Clone)]
-pub struct Target {
-    pub is_player: bool,
-    /// Base defence level. For NPCs this is the shield-icon value on the wiki.
-    pub defence: u32,
-    /// Temporary defence boost (player targets only).
-    pub defence_boost: i32,
-    /// Defence prayer being used (player targets only).
-    pub defence_prayer: DefencePrayer,
-    /// Player target's attack style (affects defence style bonus; player targets only).
-    pub attack_style: AttackStyle,
-    /// Target's stab/slash/crush defence bonus matching the attack type.
-    pub defence_bonus: i32,
-    /// Player target has Protect from Melee active.
-    pub protect_from_melee: bool,
+pub enum Target {
+    /// NPC target.
+    Npc {
+        /// Base defence level: the shield-icon value on the wiki.
+        defence: u32,
+        /// Target's stab/slash/crush defence bonus matching the attack type.
+        defence_bonus: i32,
+    },
+    /// Player target.
+    Player {
+        /// Base defence level.
+        defence: u32,
+        /// Temporary defence boost.
+        defence_boost: i32,
+        /// Defence prayer being used.
+        defence_prayer: DefencePrayer,
+        /// Attack style (affects defence style bonus).
+        attack_style: AttackStyle,
+        /// Target's stab/slash/crush defence bonus matching the attack type.
+        defence_bonus: i32,
+        /// Protect from Melee active.
+        protect_from_melee: bool,
+    },
 }
 
 /// All intermediate values and the final DPS.
@@ -229,7 +238,7 @@ impl MeleeDps {
                 / 640.0)
                 .floor() as u64;
         let mut max_hit = (max_hit_base as f64 * gear.multiplier()).floor() as u64;
-        if target.protect_from_melee {
+        if let Target::Player { protect_from_melee: true, .. } = target {
             max_hit = (max_hit as f64 * 0.6).floor() as u64;
         }
         let max_hit = max_hit as u32;
@@ -255,29 +264,37 @@ impl MeleeDps {
         .floor() as u32;
 
         // --- Steps five & six: defence roll ------------------------------------
-        let (effective_defence, defence_roll) = if target.is_player {
-            let def_style_bonus = match target.attack_style {
-                AttackStyle::Defensive => 3,
-                AttackStyle::Controlled => 1,
-                _ => 0,
-            };
-            let eff = effective_level(
-                target.defence,
-                target.defence_boost,
-                target.defence_prayer.multiplier(),
-                def_style_bonus,
-                false,
-            );
-            (
-                Some(eff),
-                eff as u64 * (target.defence_bonus as u64 + 64),
-            )
-        } else {
+        let (effective_defence, defence_roll) = match target {
+            Target::Player {
+                defence,
+                defence_boost,
+                defence_prayer,
+                attack_style,
+                defence_bonus,
+                ..
+            } => {
+                let def_style_bonus = match attack_style {
+                    AttackStyle::Defensive => 3,
+                    AttackStyle::Controlled => 1,
+                    _ => 0,
+                };
+                let eff = effective_level(
+                    *defence,
+                    *defence_boost,
+                    defence_prayer.multiplier(),
+                    def_style_bonus,
+                    false,
+                );
+                (
+                    Some(eff),
+                    eff as u64 * (*defence_bonus as u64 + 64),
+                )
+            }
             // NPC: (defence level + 9) * (defence bonus + 64)
-            (
+            Target::Npc { defence, defence_bonus } => (
                 None,
-                (target.defence as u64 + 9) * (target.defence_bonus as u64 + 64),
-            )
+                (u64::from(*defence) + 9) * (*defence_bonus as u64 + 64),
+            ),
         };
         let defence_roll = defence_roll as u32;
 
@@ -369,14 +386,9 @@ mod tests {
             attack_speed: GameTicks(2),
         };
         // NPC with 50 def, 40 def bonus.
-        let target = Target {
-            is_player: false,
+        let target = Target::Npc {
             defence: 50,
-            defence_boost: 0,
-            defence_prayer: DefencePrayer::None,
-            attack_style: AttackStyle::Aggressive,
             defence_bonus: 40,
-            protect_from_melee: false,
         };
 
         let r = MeleeDps::calculate(&attacker, &target, GearBonus::None);
@@ -418,8 +430,7 @@ mod tests {
             attack_speed: GameTicks(2),
         };
         // Player target: 99 def +15, piety (1.20), defensive style, 100 def bonus, PFM.
-        let target = Target {
-            is_player: true,
+        let target = Target::Player {
             defence: 99,
             defence_boost: 15,
             defence_prayer: DefencePrayer::Piety,
@@ -456,14 +467,9 @@ mod tests {
             void: false,
             attack_speed: GameTicks(2),
         };
-        let target = Target {
-            is_player: false,
+        let target = Target::Npc {
             defence: 1,
-            defence_boost: 0,
-            defence_prayer: DefencePrayer::None,
-            attack_style: AttackStyle::Aggressive,
             defence_bonus: 0,
-            protect_from_melee: false,
         };
 
         let r = MeleeDps::calculate(&attacker, &target, GearBonus::None);

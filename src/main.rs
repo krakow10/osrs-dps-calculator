@@ -1,13 +1,22 @@
 use osrs_dps_calculator::{
-	AttackPrayer, AttackStyle, Attacker, DefencePrayer, GameTicks, GearBonus, MeleeDps,
-	StrengthPrayer, Target,
+	AttackPrayer, AttackStyle, Attacker, GameTicks, GearBonus, MeleeDps, StrengthPrayer, Target,
 };
+
+fn level_exp(level: u8) -> u32 {
+	(1..level)
+		.map(|l| {
+			let l = l as f64;
+			(l + 300.0 * 2.0f64.powf(l / 7.0)) as u32
+		})
+		.sum::<u32>()
+		/ 4
+}
 
 fn main() {
 	// High-level melee setup: 99/99, +19/+19 boosts, piety, aggressive
 	// style, full melee void, ~105 str / ~80 atk equipment bonus,
 	// 2-tick (1.2s) attack speed.
-	let attacker = Attacker {
+	let mut current = Attacker {
 		strength: 99,
 		attack: 99,
 		strength_boost: 19,
@@ -19,32 +28,52 @@ fn main() {
 		attack_style: AttackStyle::Aggressive,
 		void: true,
 		gear_bonus: GearBonus::None,
-		attack_speed: GameTicks(2),
+		attack_speed: GameTicks(4),
 	};
 
-	// PvM: NPC with 87 def and 60 def bonus, slayer helm bonus active.
-	let npc = Target::Npc {
-		defence: 87,
-		defence_bonus: 60,
+	// PvM: NPC with 40 def and 0 def bonus.
+	let target = Target::Npc {
+		defence: 40,
+		defence_bonus: 0,
 	};
-	let mut pvm_attacker = attacker.clone();
-	pvm_attacker.gear_bonus = GearBonus::Slayer;
-	println!("PvM (NPC 87 def / 60 def bonus, slayer helm):");
-	let r = MeleeDps::calculate(&pvm_attacker, &npc);
-	println!("{r}");
-	println!();
 
-	// PvP: 99 def player, +15 boost, piety, defensive style,
-	// 122 def bonus, Protect from Melee active.
-	let player = Target::Player {
-		defence: 99,
-		defence_boost: 15,
-		defence_prayer: DefencePrayer::Piety,
-		attack_style: AttackStyle::Defensive,
-		defence_bonus: 122,
-		protect_from_melee: true,
-	};
-	println!("PvP (99 def player, defensive, PFM, no gear bonus):");
-	let r = MeleeDps::calculate(&attacker, &player);
-	println!("{r}");
+	let mut plot = Vec::new();
+
+	let mut dps = MeleeDps::calculate(&current, &target);
+
+	let mut decrement_att = current.clone();
+	let mut decrement_str = current.clone();
+	loop {
+		plot.push((current.attack, current.strength));
+
+		decrement_att.attack = current.attack - 1;
+		decrement_att.strength = current.strength;
+		decrement_str.attack = current.attack;
+		decrement_str.strength = current.strength - 1;
+
+		let dps_att = MeleeDps::calculate(&decrement_att, &target);
+		let dps_str = MeleeDps::calculate(&decrement_str, &target);
+
+		// pick whichever increases the most dps per exp
+		let exp_att = level_exp(current.attack as u8) - level_exp(decrement_att.attack as u8);
+		let exp_str = level_exp(current.strength as u8) - level_exp(decrement_str.strength as u8);
+
+		if (dps.dps - dps_att.dps) / (exp_att as f64) < (dps.dps - dps_str.dps) / (exp_str as f64) {
+			// the increase in strength dps per exp was larger, decrement attack to lose less dps
+			dps = dps_att;
+			core::mem::swap(&mut current, &mut decrement_att);
+		} else {
+			dps = dps_str;
+			core::mem::swap(&mut current, &mut decrement_str);
+		}
+
+		if current.attack == 1 || current.strength == 1 {
+			break;
+		}
+	}
+
+	plot.reverse();
+	for (att, str) in plot {
+		println!("att={att:02} str={str:02}");
+	}
 }

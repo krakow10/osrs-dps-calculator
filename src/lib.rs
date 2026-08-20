@@ -168,6 +168,9 @@ pub struct Attacker {
 	pub attack_style: AttackStyle,
 	/// Wearing full melee void.
 	pub void: bool,
+	/// Damage/accuracy bonus from a salve amulet or slayer helm. Only applies
+	/// to NPC targets.
+	pub gear_bonus: GearBonus,
 	/// Weapon attack speed, in ticks per attack.
 	pub attack_speed: GameTicks,
 }
@@ -216,7 +219,12 @@ pub struct MeleeDps {
 
 impl MeleeDps {
 	/// Calculate melee DPS using the formulas from the OSRS wiki.
-	pub fn calculate(attacker: &Attacker, target: &Target, gear: GearBonus) -> MeleeDps {
+	pub fn calculate(attacker: &Attacker, target: &Target) -> MeleeDps {
+		// Salve amulet and slayer helm bonuses only work on monsters.
+		let gear = match target {
+			Target::Npc { .. } => attacker.gear_bonus,
+			Target::Player { .. } => GearBonus::None,
+		};
 		// --- Step one: effective strength level -------------------------------
 		let strength_style_bonus = match attacker.attack_style {
 			AttackStyle::Aggressive => 3,
@@ -390,6 +398,7 @@ mod tests {
 			equipment_attack_bonus: 80,
 			attack_style: AttackStyle::Aggressive,
 			void: false,
+			gear_bonus: GearBonus::None,
 			attack_speed: GameTicks(2),
 		};
 		// NPC with 50 def, 40 def bonus.
@@ -398,7 +407,7 @@ mod tests {
 			defence_bonus: 40,
 		};
 
-		let r = MeleeDps::calculate(&attacker, &target, GearBonus::None);
+		let r = MeleeDps::calculate(&attacker, &target);
 
 		// eff strength: floor(109 * 1.23) = 134; 134 + 3 (aggressive) + 8 = 145
 		assert_eq!(r.effective_strength, 145);
@@ -434,6 +443,8 @@ mod tests {
 			equipment_attack_bonus: 80,
 			attack_style: AttackStyle::Aggressive,
 			void: false,
+			// Salve bonuses don't apply to player targets, so this must be ignored.
+			gear_bonus: GearBonus::EnhancedSalve,
 			attack_speed: GameTicks(2),
 		};
 		// Player target: 99 def +15, piety (1.20), defensive style, 100 def bonus, PFM.
@@ -446,12 +457,12 @@ mod tests {
 			protect_from_melee: true,
 		};
 
-		let r = MeleeDps::calculate(&attacker, &target, GearBonus::EnhancedSalve);
+		let r = MeleeDps::calculate(&attacker, &target);
 
-		// max hit: floor(28 * 1.2) = 33, then PFM: floor(33 * 0.6) = 19
-		assert_eq!(r.max_hit, 19);
-		// attack roll includes the salve (e) gear bonus: floor(138 * 144 * 1.2) = 23846
-		assert_eq!(r.attack_roll, 23_846);
+		// max hit: no gear bonus vs. players, so 28; then PFM: floor(28 * 0.6) = 16
+		assert_eq!(r.max_hit, 16);
+		// attack roll ignores the salve (e) gear bonus vs. players: 138 * 144 = 19872
+		assert_eq!(r.attack_roll, 19_872);
 		// eff def: floor(114 * 1.20) = 136; 136 + 3 (defensive) + 8 = 147
 		assert_eq!(r.effective_defence, Some(147));
 		// def roll: 147 * 164 = 24108
@@ -472,6 +483,7 @@ mod tests {
 			equipment_attack_bonus: 0,
 			attack_style: AttackStyle::Aggressive,
 			void: false,
+			gear_bonus: GearBonus::None,
 			attack_speed: GameTicks(2),
 		};
 		let target = Target::Npc {
@@ -479,7 +491,7 @@ mod tests {
 			defence_bonus: 0,
 		};
 
-		let r = MeleeDps::calculate(&attacker, &target, GearBonus::None);
+		let r = MeleeDps::calculate(&attacker, &target);
 		assert_eq!(r.max_hit, 0);
 		// Every successful hit rolls 0 and is bumped up to 1.
 		assert!((r.average_damage_per_attack - r.hit_chance).abs() < 1e-12);

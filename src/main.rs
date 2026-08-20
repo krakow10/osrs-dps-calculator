@@ -18,6 +18,7 @@ fn main() {
 		equipment_attack_bonus: 80,
 		attack_style: AttackStyle::Aggressive,
 		void: true,
+		gear_bonus: GearBonus::None,
 		attack_speed: GameTicks(2),
 	};
 
@@ -26,8 +27,10 @@ fn main() {
 		defence: 87,
 		defence_bonus: 60,
 	};
+	let mut pvm_attacker = attacker.clone();
+	pvm_attacker.gear_bonus = GearBonus::Slayer;
 	println!("PvM (NPC 87 def / 60 def bonus, slayer helm):");
-	let r = MeleeDps::calculate(&attacker, &npc, GearBonus::Slayer);
+	let r = MeleeDps::calculate(&pvm_attacker, &npc);
 	println!("{r}");
 	println!();
 
@@ -42,6 +45,6 @@ fn main() {
 		protect_from_melee: true,
 	};
 	println!("PvP (99 def player, defensive, PFM, no gear bonus):");
-	let r = MeleeDps::calculate(&attacker, &player, GearBonus::None);
+	let r = MeleeDps::calculate(&attacker, &player);
 	println!("{r}");
 }

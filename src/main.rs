@@ -1,6 +1,11 @@
 use osrs_dps_calculator::{
 	AttackPrayer, AttackStyle, Attacker, GameTicks, GearBonus, MeleeDps, StrengthPrayer, Target,
 };
+use std::cmp::{Ordering, Reverse};
+use std::collections::BinaryHeap;
+
+/// Highest level we care about for attack and strength.
+const MAX_LEVEL: u32 = 99;
 
 fn level_exp(level: u8) -> u32 {
 	(1..level)
@@ -12,11 +17,151 @@ fn level_exp(level: u8) -> u32 {
 		/ 4
 }
 
+/// Exp needed to raise a skill from `level` to `level + 1`.
+fn exp_to_gain(level: u32) -> u32 {
+	level_exp((level + 1) as u8) - level_exp(level as u8)
+}
+
+/// Flatten an (attack, strength) pair into a node index, and back.
+fn node_index(attack: u32, strength: u32) -> usize {
+	(attack - 1) as usize * (MAX_LEVEL as usize) + (strength - 1) as usize
+}
+
+fn node_coords(idx: usize) -> (u32, u32) {
+	let attack = idx as u32 / MAX_LEVEL + 1;
+	let strength = idx as u32 % MAX_LEVEL + 1;
+	(attack, strength)
+}
+
+/// DPS at a given (attack, strength), keeping the rest of the attacker
+/// setup and target fixed.
+fn dps_of(attacker: &Attacker, target: &Target, attack: u32, strength: u32) -> f64 {
+	let mut atk = attacker.clone();
+	atk.attack = attack;
+	atk.strength = strength;
+	MeleeDps::calculate(&atk, target).dps
+}
+
+/// Entry in the Dijkstra priority queue. Ordered so the smallest
+/// (distance, node) pops first.
+#[derive(Debug, Clone, Copy)]
+struct HeapItem {
+	dist: f64,
+	node: usize,
+}
+
+impl PartialEq for HeapItem {
+	fn eq(&self, other: &Self) -> bool {
+		self.dist.total_cmp(&other.dist) == Ordering::Equal && self.node == other.node
+	}
+}
+
+impl Eq for HeapItem {}
+
+impl PartialOrd for HeapItem {
+	fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+		Some(self.cmp(other))
+	}
+}
+
+impl Ord for HeapItem {
+	fn cmp(&self, other: &Self) -> Ordering {
+		self.dist
+			.total_cmp(&other.dist)
+			.then_with(|| self.node.cmp(&other.node))
+	}
+}
+
+/// Find the attack/strength leveling path from 1/1 to 99/99 that
+/// minimizes the total time, where the time spent on each level-up is
+/// proportional to the exp needed for that level divided by the DPS at
+/// the state you're in while leveling it up.
+///
+/// Returns the path (start to goal) and the cumulative time to reach
+/// each point on the path.
+fn solve(attacker: &Attacker, target: &Target) -> (Vec<(u32, u32)>, Vec<f64>) {
+	let n = (MAX_LEVEL * MAX_LEVEL) as usize;
+	let start = node_index(1, 1);
+	let goal = node_index(MAX_LEVEL, MAX_LEVEL);
+
+	let mut dist = vec![f64::INFINITY; n];
+	let mut prev = vec![None; n];
+	dist[start] = 0.0;
+
+	let mut heap = BinaryHeap::new();
+	heap.push(Reverse(HeapItem {
+		dist: 0.0,
+		node: start,
+	}));
+
+	while let Some(Reverse(HeapItem { dist: d, node: cur })) = heap.pop() {
+		// Skip stale entries.
+		if d > dist[cur] {
+			continue;
+		}
+		if cur == goal {
+			break;
+		}
+		let (attack, strength) = node_coords(cur);
+		let current_dps = dps_of(attacker, target, attack, strength);
+
+		// Level up attack: (a, s) -> (a + 1, s).
+		if attack < MAX_LEVEL {
+			let cost = exp_to_gain(attack) as f64 / current_dps;
+			let next = node_index(attack + 1, strength);
+			let nd = d + cost;
+			if nd < dist[next] {
+				dist[next] = nd;
+				prev[next] = Some(cur);
+				heap.push(Reverse(HeapItem {
+					dist: nd,
+					node: next,
+				}));
+			}
+		}
+		// Level up strength: (a, s) -> (a, s + 1).
+		if strength < MAX_LEVEL {
+			let cost = exp_to_gain(strength) as f64 / current_dps;
+			let next = node_index(attack, strength + 1);
+			let nd = d + cost;
+			if nd < dist[next] {
+				dist[next] = nd;
+				prev[next] = Some(cur);
+				heap.push(Reverse(HeapItem {
+					dist: nd,
+					node: next,
+				}));
+			}
+		}
+	}
+
+	// Reconstruct the path from goal back to start.
+	let mut path = Vec::new();
+	let mut cur = goal;
+	loop {
+		path.push(node_coords(cur));
+		if cur == start {
+			break;
+		}
+		cur = match prev[cur] {
+			Some(p) => p,
+			None => break,
+		};
+	}
+	path.reverse();
+
+	let times: Vec<f64> = path
+		.iter()
+		.map(|&(a, s)| dist[node_index(a, s)])
+		.collect();
+
+	(path, times)
+}
+
 fn main() {
-	// High-level melee setup: 99/99, +19/+19 boosts, piety, aggressive
-	// style, full melee void, ~105 str / ~80 atk equipment bonus,
-	// 2-tick (1.2s) attack speed.
-	let mut current = Attacker {
+	// High-level melee setup: 99/99, aggressive style, full melee void,
+	// 40 str / 40 atk equipment bonus, 4-tick (2.4s) attack speed.
+	let attacker = Attacker {
 		strength: 99,
 		attack: 99,
 		strength_boost: 0,
@@ -31,49 +176,30 @@ fn main() {
 		attack_speed: GameTicks(4),
 	};
 
-	// PvM: NPC with 40 def and 0 def bonus.
+	// PvM: NPC with 1 def and 0 def bonus.
 	let target = Target::Npc {
 		defence: 1,
 		defence_bonus: 0,
 	};
 
-	let mut plot = Vec::new();
+	let (path, times) = solve(&attacker, &target);
 
-	let mut dps = MeleeDps::calculate(&current, &target);
-
-	let mut decrement_att = current.clone();
-	let mut decrement_str = current.clone();
-	loop {
-		plot.push((current.attack, current.strength));
-
-		decrement_att.attack = current.attack - 1;
-		decrement_att.strength = current.strength;
-		decrement_str.attack = current.attack;
-		decrement_str.strength = current.strength - 1;
-
-		let dps_att = MeleeDps::calculate(&decrement_att, &target);
-		let dps_str = MeleeDps::calculate(&decrement_str, &target);
-
-		// pick whichever increases the most dps per exp
-		let exp_att = level_exp(current.attack as u8) - level_exp(decrement_att.attack as u8);
-		let exp_str = level_exp(current.strength as u8) - level_exp(decrement_str.strength as u8);
-
-		if (dps.dps - dps_att.dps) / (exp_att as f64) < (dps.dps - dps_str.dps) / (exp_str as f64) {
-			// the increase in strength dps per exp was larger, decrement attack to lose less dps
-			dps = dps_att;
-			core::mem::swap(&mut current, &mut decrement_att);
+	println!("Optimal leveling path 1/1 -> 99/99 (minimizes sum of exp / dps):");
+	for i in 0..path.len() {
+		let (attack, strength) = path[i];
+		let step = if i == 0 {
+			0.0
 		} else {
-			dps = dps_str;
-			core::mem::swap(&mut current, &mut decrement_str);
-		}
-
-		if current.attack == 1 || current.strength == 1 {
-			break;
-		}
+			times[i] - times[i - 1]
+		};
+		let total = times[i];
+		let dps = dps_of(&attacker, &target, attack, strength);
+		println!(
+			"att={attack:02} str={strength:02}  step={step:>12.4}  total={total:>12.4}  dps={dps:.4}"
+		);
 	}
-
-	plot.reverse();
-	for (att, str) in plot {
-		println!("att={att:02} str={str:02}");
-	}
+	println!(
+		"Total time: {:.4}",
+		*times.last().expect("path is non-empty")
+	);
 }

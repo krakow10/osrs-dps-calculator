@@ -120,8 +120,8 @@ impl MeleeDps {
         // --- Step two: max hit ------------------------------------------------
         // eff_strength * (str bonus + 64) + 320, / 640, floor, then gear bonus, floor.
         let max_hit_base =
-            (effective_strength as f64 * (attacker.equipment_strength_bonus as f64 + 64.0) + 320.0)
-                / 640.0
+            ((effective_strength as f64 * (attacker.equipment_strength_bonus as f64 + 64.0) + 320.0)
+                / 640.0)
                 .floor() as u64;
         let mut max_hit = (max_hit_base as f64 * gear.multiplier()).floor() as u64;
         if target.protect_from_melee {

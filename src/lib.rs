@@ -280,20 +280,20 @@ mod tests {
         assert_eq!(r.effective_strength, 145);
         // max hit: floor((145 * 124 + 320) / 640) = floor(28.59) = 28
         assert_eq!(r.max_hit, 28);
-        // eff attack: floor(109 * 1.20) = 130; 130 + 3 + 8 = 141
-        assert_eq!(r.effective_attack, 141);
-        // attack roll: 141 * 144 = 20304
-        assert_eq!(r.attack_roll, 20_304);
+        // eff attack: floor(109 * 1.20) = 130; 130 + 0 (aggressive) + 8 = 138
+        assert_eq!(r.effective_attack, 138);
+        // attack roll: 138 * 144 = 19872
+        assert_eq!(r.attack_roll, 19_872);
         // def roll: (50 + 9) * (40 + 64) = 6136
         assert_eq!(r.defence_roll, 6_136);
         assert_eq!(r.effective_defence, None);
 
-        let expected_hit_chance = 1.0 - 6138.0 / (2.0 * 20_305.0);
+        let expected_hit_chance = 1.0 - 6138.0 / (2.0 * 19_873.0);
         assert!((r.hit_chance - expected_hit_chance).abs() < 1e-12);
 
         let expected_dps = expected_hit_chance * (14.0 + 1.0 / 28.0 + 1.0);
         assert!((r.dps - expected_dps).abs() < 1e-9);
-        assert!((r.dps - 12.7631).abs() < 1e-3);
+        assert!((r.dps - 12.7137).abs() < 1e-3);
     }
 
     #[test]
@@ -326,8 +326,8 @@ mod tests {
 
         // max hit: floor(28 * 1.2) = 33, then PFM: floor(33 * 0.6) = 19
         assert_eq!(r.max_hit, 19);
-        // attack roll includes the salve (e) gear bonus: floor(141 * 144 * 1.2) = 24364
-        assert_eq!(r.attack_roll, 24_364);
+        // attack roll includes the salve (e) gear bonus: floor(138 * 144 * 1.2) = 23846
+        assert_eq!(r.attack_roll, 23_846);
         // eff def: floor(114 * 1.20) = 136; 136 + 3 (defensive) + 8 = 147
         assert_eq!(r.effective_defence, Some(147));
         // def roll: 147 * 164 = 24108

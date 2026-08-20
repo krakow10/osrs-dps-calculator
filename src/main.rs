@@ -19,12 +19,12 @@ fn main() {
 	let mut current = Attacker {
 		strength: 99,
 		attack: 99,
-		strength_boost: 19,
-		attack_boost: 19,
-		strength_prayer: StrengthPrayer::Piety,
-		attack_prayer: AttackPrayer::Piety,
-		equipment_strength_bonus: 105,
-		equipment_attack_bonus: 80,
+		strength_boost: 0,
+		attack_boost: 0,
+		strength_prayer: StrengthPrayer::None,
+		attack_prayer: AttackPrayer::None,
+		equipment_strength_bonus: 40,
+		equipment_attack_bonus: 40,
 		attack_style: AttackStyle::Aggressive,
 		void: true,
 		gear_bonus: GearBonus::None,
@@ -33,7 +33,7 @@ fn main() {
 
 	// PvM: NPC with 40 def and 0 def bonus.
 	let target = Target::Npc {
-		defence: 40,
+		defence: 1,
 		defence_bonus: 0,
 	};
 

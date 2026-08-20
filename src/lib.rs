@@ -205,12 +205,12 @@ pub enum Target {
 /// All intermediate values and the final DPS.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MeleeDps {
-	pub effective_strength: u32,
-	pub max_hit: u32,
-	pub effective_attack: u32,
-	pub attack_roll: u32,
+	pub effective_strength: f64,
+	pub max_hit: f64,
+	pub effective_attack: f64,
+	pub attack_roll: f64,
 	/// `Some` for player targets, `None` for NPCs.
-	pub effective_defence: Option<u32>,
+	pub effective_defence: Option<f64>,
 	pub defence_roll: u32,
 	pub hit_chance: f64,
 	pub average_damage_per_attack: f64,
@@ -243,17 +243,15 @@ impl MeleeDps {
 		// eff_strength * (str bonus + 64) + 320, / 640, floor, then gear bonus, floor.
 		let max_hit_base = ((effective_strength as f64
 			* (attacker.equipment_strength_bonus as f64 + 64.0)
-			+ 320.0) / 640.0)
-			.floor() as u64;
-		let mut max_hit = (max_hit_base as f64 * gear.multiplier()).floor() as u64;
+			+ 320.0) / 640.0);
+		let mut max_hit = (max_hit_base as f64 * gear.multiplier());
 		if let Target::Player {
 			protect_from_melee: true,
 			..
 		} = target
 		{
-			max_hit = (max_hit as f64 * 0.6).floor() as u64;
+			max_hit = max_hit as f64 * 0.6;
 		}
-		let max_hit = max_hit as u32;
 
 		// --- Step three: effective attack level -------------------------------
 		let attack_style_bonus = match attacker.attack_style {
@@ -272,8 +270,7 @@ impl MeleeDps {
 		// --- Step four: attack roll --------------------------------------------
 		let attack_roll = (effective_attack as f64
 			* (attacker.equipment_attack_bonus as f64 + 64.0)
-			* gear.multiplier())
-		.floor() as u32;
+			* gear.multiplier());
 
 		// --- Steps five & six: defence roll ------------------------------------
 		let (effective_defence, defence_roll) = match target {
@@ -322,7 +319,7 @@ impl MeleeDps {
 		// Hit chance * (max_hit / 2 + 1 / max_hit + 1). The +1/max_hit term
 		// accounts for a 0 roll on a successful hit being bumped up to 1.
 		// (If max hit is 0, every successful hit deals exactly 1.)
-		let average_damage_per_attack = if max_hit == 0 {
+		let average_damage_per_attack = if max_hit == 0.0 {
 			hit_chance
 		} else {
 			hit_chance * (max_hit as f64 / 2.0 + 1.0 / max_hit as f64 + 1.0)
@@ -345,13 +342,13 @@ impl MeleeDps {
 
 /// Steps one/three/five: (level + boost) * prayer, floor, + style bonus, +8,
 /// optional *1.1 void, floor.
-fn effective_level(level: u32, boost: i32, prayer_mult: f64, style_bonus: u32, void: bool) -> u32 {
+fn effective_level(level: u32, boost: i32, prayer_mult: f64, style_bonus: u32, void: bool) -> f64 {
 	let mut lvl = (level as f64 + boost as f64) * prayer_mult;
-	lvl = lvl.floor() + style_bonus as f64 + 8.0;
+	lvl = lvl + style_bonus as f64 + 8.0;
 	if void {
 		lvl *= 1.1;
 	}
-	lvl.floor() as u32
+	lvl
 }
 
 impl std::fmt::Display for MeleeDps {
@@ -410,13 +407,13 @@ mod tests {
 		let r = MeleeDps::calculate(&attacker, &target);
 
 		// eff strength: floor(109 * 1.23) = 134; 134 + 3 (aggressive) + 8 = 145
-		assert_eq!(r.effective_strength, 145);
+		assert_eq!(r.effective_strength, 145.0);
 		// max hit: floor((145 * 124 + 320) / 640) = floor(28.59) = 28
-		assert_eq!(r.max_hit, 28);
+		assert_eq!(r.max_hit, 28.0);
 		// eff attack: floor(109 * 1.20) = 130; 130 + 0 (aggressive) + 8 = 138
-		assert_eq!(r.effective_attack, 138);
+		assert_eq!(r.effective_attack, 138.0);
 		// attack roll: 138 * 144 = 19872
-		assert_eq!(r.attack_roll, 19_872);
+		assert_eq!(r.attack_roll, 19_872.0);
 		// def roll: (50 + 9) * (40 + 64) = 6136
 		assert_eq!(r.defence_roll, 6_136);
 		assert_eq!(r.effective_defence, None);
@@ -460,11 +457,11 @@ mod tests {
 		let r = MeleeDps::calculate(&attacker, &target);
 
 		// max hit: no gear bonus vs. players, so 28; then PFM: floor(28 * 0.6) = 16
-		assert_eq!(r.max_hit, 16);
+		assert_eq!(r.max_hit, 16.0);
 		// attack roll ignores the salve (e) gear bonus vs. players: 138 * 144 = 19872
-		assert_eq!(r.attack_roll, 19_872);
+		assert_eq!(r.attack_roll, 19_872.0);
 		// eff def: floor(114 * 1.20) = 136; 136 + 3 (defensive) + 8 = 147
-		assert_eq!(r.effective_defence, Some(147));
+		assert_eq!(r.effective_defence, Some(147.0));
 		// def roll: 147 * 164 = 24108
 		assert_eq!(r.defence_roll, 24_108);
 	}
@@ -492,7 +489,7 @@ mod tests {
 		};
 
 		let r = MeleeDps::calculate(&attacker, &target);
-		assert_eq!(r.max_hit, 0);
+		assert_eq!(r.max_hit, 0.0);
 		// Every successful hit rolls 0 and is bumped up to 1.
 		assert!((r.average_damage_per_attack - r.hit_chance).abs() < 1e-12);
 	}

@@ -134,6 +134,20 @@ impl DefencePrayer {
     }
 }
 
+/// A number of game ticks. One tick is exactly 0.6 seconds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct GameTicks(pub u32);
+
+impl GameTicks {
+    /// Length of one tick in seconds.
+    pub const SECONDS_PER_TICK: f64 = 0.6;
+
+    /// Total time in seconds. Zero ticks is 0.0 seconds.
+    pub fn as_seconds(self) -> f64 {
+        f64::from(self.0) * Self::SECONDS_PER_TICK
+    }
+}
+
 /// The player doing the attacking.
 #[derive(Debug, Clone)]
 pub struct Attacker {
@@ -154,8 +168,8 @@ pub struct Attacker {
     pub attack_style: AttackStyle,
     /// Wearing full melee void.
     pub void: bool,
-    /// Weapon attack speed in seconds per attack (e.g. 1.0 for a scimitar, 1.2 for an axe).
-    pub attack_speed_secs: f64,
+    /// Weapon attack speed, in ticks per attack.
+    pub attack_speed: GameTicks,
 }
 
 /// The target being attacked (an NPC or a player).
@@ -284,7 +298,7 @@ impl MeleeDps {
         } else {
             hit_chance * (max_hit as f64 / 2.0 + 1.0 / max_hit as f64 + 1.0)
         };
-        let dps = average_damage_per_attack / attacker.attack_speed_secs;
+        let dps = average_damage_per_attack / attacker.attack_speed.as_seconds();
 
         MeleeDps {
             effective_strength,
@@ -352,7 +366,7 @@ mod tests {
             equipment_attack_bonus: 80,
             attack_style: AttackStyle::Aggressive,
             void: false,
-            attack_speed_secs: 1.0,
+            attack_speed: GameTicks(2),
         };
         // NPC with 50 def, 40 def bonus.
         let target = Target {
@@ -382,9 +396,10 @@ mod tests {
         let expected_hit_chance = 1.0 - 6138.0 / (2.0 * 19_873.0);
         assert!((r.hit_chance - expected_hit_chance).abs() < 1e-12);
 
-        let expected_dps = expected_hit_chance * (14.0 + 1.0 / 28.0 + 1.0);
+        // 2 ticks = 1.2s per attack.
+        let expected_dps = expected_hit_chance * (14.0 + 1.0 / 28.0 + 1.0) / 1.2;
         assert!((r.dps - expected_dps).abs() < 1e-9);
-        assert!((r.dps - 12.7137).abs() < 1e-3);
+        assert!((r.dps - 10.5948).abs() < 1e-3);
     }
 
     #[test]
@@ -400,7 +415,7 @@ mod tests {
             equipment_attack_bonus: 80,
             attack_style: AttackStyle::Aggressive,
             void: false,
-            attack_speed_secs: 1.0,
+            attack_speed: GameTicks(2),
         };
         // Player target: 99 def +15, piety (1.20), defensive style, 100 def bonus, PFM.
         let target = Target {
@@ -439,7 +454,7 @@ mod tests {
             equipment_attack_bonus: 0,
             attack_style: AttackStyle::Aggressive,
             void: false,
-            attack_speed_secs: 1.0,
+            attack_speed: GameTicks(2),
         };
         let target = Target {
             is_player: false,

@@ -1,9 +1,9 @@
-use osrs_dps_calculator::{AttackPrayer, AttackStyle, Attacker, DefencePrayer, GearBonus, MeleeDps, StrengthPrayer, Target};
+use osrs_dps_calculator::{AttackPrayer, AttackStyle, Attacker, DefencePrayer, GameTicks, GearBonus, MeleeDps, StrengthPrayer, Target};
 
 fn main() {
     // High-level melee setup: 99/99, +19/+19 boosts, piety, aggressive
     // style, full melee void, ~105 str / ~80 atk equipment bonus,
-    // 1.0s attack speed (fast weapon).
+    // 2-tick (1.2s) attack speed.
     let attacker = Attacker {
         strength: 99,
         attack: 99,
@@ -15,7 +15,7 @@ fn main() {
         equipment_attack_bonus: 80,
         attack_style: AttackStyle::Aggressive,
         void: true,
-        attack_speed_secs: 1.0,
+        attack_speed: GameTicks(2),
     };
 
     // PvM: NPC with 87 def and 60 def bonus, slayer helm bonus active.

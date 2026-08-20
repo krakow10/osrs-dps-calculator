@@ -158,10 +158,10 @@ fn solve(attacker: &Attacker, target: &Target) -> (Vec<(u32, u32)>, Vec<f64>) {
 	(path, times)
 }
 
-fn main() {
+fn base_attacker() -> Attacker {
 	// High-level melee setup: 99/99, aggressive style, full melee void,
 	// 40 str / 40 atk equipment bonus, 4-tick (2.4s) attack speed.
-	let attacker = Attacker {
+	Attacker {
 		strength: 99,
 		attack: 99,
 		strength_boost: 0,
@@ -174,13 +174,20 @@ fn main() {
 		void: true,
 		gear_bonus: GearBonus::None,
 		attack_speed: GameTicks(4),
-	};
+	}
+}
 
+fn test_target() -> Target {
 	// PvM: NPC with 1 def and 0 def bonus.
-	let target = Target::Npc {
+	Target::Npc {
 		defence: 1,
 		defence_bonus: 0,
-	};
+	}
+}
+
+fn main() {
+	let attacker = base_attacker();
+	let target = test_target();
 
 	let (path, times) = solve(&attacker, &target);
 
@@ -202,4 +209,52 @@ fn main() {
 		"Total time: {:.4}",
 		*times.last().expect("path is non-empty")
 	);
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	/// The leveling graph is a DAG (edges only increase attack/strength), so
+	/// the optimum can also be found by a topological-order DP. Use that as
+	/// an independent check of the Dijkstra implementation.
+	#[test]
+	fn dijkstra_matches_dp() {
+		let attacker = base_attacker();
+		let target = test_target();
+
+		let (path, times) = solve(&attacker, &target);
+
+		let mut dp = vec![vec![f64::INFINITY; MAX_LEVEL as usize + 1]; MAX_LEVEL as usize + 1];
+		dp[1][1] = 0.0;
+		for a in 1..=MAX_LEVEL {
+			for s in 1..=MAX_LEVEL {
+				let d = dp[a as usize][s as usize];
+				if d.is_infinite() {
+					continue;
+				}
+				let cost = |level: u32| exp_to_gain(level) as f64 / dps_of(&attacker, &target, a, s);
+				if a < MAX_LEVEL {
+					dp[(a + 1) as usize][s as usize] =
+						dp[(a + 1) as usize][s as usize].min(d + cost(a));
+				}
+				if s < MAX_LEVEL {
+					dp[a as usize][(s + 1) as usize] =
+						dp[a as usize][(s + 1) as usize].min(d + cost(s));
+				}
+			}
+		}
+		assert!((dp[MAX_LEVEL as usize][MAX_LEVEL as usize] - times[times.len() - 1]).abs() < 1e-6);
+
+		// The path must be monotone: each step raises exactly one skill by one.
+		for i in 1..path.len() {
+			let (pa, ps) = path[i - 1];
+			let (ca, cs) = path[i];
+			let da = (ca as i32 - pa as i32).abs();
+			let ds = (cs as i32 - ps as i32).abs();
+			assert!(da + ds == 1, "step from {:?} to {:?} is not a single level-up", path[i - 1], path[i]);
+		}
+		assert_eq!(path[0], (1, 1));
+		assert_eq!(path[path.len() - 1], (MAX_LEVEL, MAX_LEVEL));
+	}
 }

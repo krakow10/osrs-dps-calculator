@@ -41,6 +41,99 @@ impl GearBonus {
     }
 }
 
+/// Prayer boosting strength.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum StrengthPrayer {
+    /// No prayer (1.0).
+    #[default]
+    None,
+    /// Burst of Strength (1.05).
+    BurstOfStrength,
+    /// Superhuman Strength (1.10).
+    SuperhumanStrength,
+    /// Ultimate Strength (1.15).
+    UltimateStrength,
+    /// Chivalry (1.18).
+    Chivalry,
+    /// Piety (1.23).
+    Piety,
+}
+
+impl StrengthPrayer {
+    fn multiplier(self) -> f64 {
+        match self {
+            StrengthPrayer::None => 1.0,
+            StrengthPrayer::BurstOfStrength => 1.05,
+            StrengthPrayer::SuperhumanStrength => 1.10,
+            StrengthPrayer::UltimateStrength => 1.15,
+            StrengthPrayer::Chivalry => 1.18,
+            StrengthPrayer::Piety => 1.23,
+        }
+    }
+}
+
+/// Prayer boosting attack (melee hit chance).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AttackPrayer {
+    /// No prayer (1.0).
+    #[default]
+    None,
+    /// Clarity of Thought (1.05).
+    ClarityOfThought,
+    /// Improved Reflexes (1.10).
+    ImprovedReflexes,
+    /// Incredible Reflexes (1.15).
+    IncredibleReflexes,
+    /// Chivalry (1.15).
+    Chivalry,
+    /// Piety (1.20).
+    Piety,
+}
+
+impl AttackPrayer {
+    fn multiplier(self) -> f64 {
+        match self {
+            AttackPrayer::None => 1.0,
+            AttackPrayer::ClarityOfThought => 1.05,
+            AttackPrayer::ImprovedReflexes => 1.10,
+            AttackPrayer::IncredibleReflexes => 1.15,
+            AttackPrayer::Chivalry => 1.15,
+            AttackPrayer::Piety => 1.20,
+        }
+    }
+}
+
+/// Prayer boosting defence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DefencePrayer {
+    /// No prayer (1.0).
+    #[default]
+    None,
+    /// Rock Skin (1.05).
+    RockSkin,
+    /// Superhuman Defence (1.10).
+    SuperhumanDefence,
+    /// Ultimate Defence (1.15).
+    UltimateDefence,
+    /// Chivalry (1.15).
+    Chivalry,
+    /// Piety (1.20).
+    Piety,
+}
+
+impl DefencePrayer {
+    fn multiplier(self) -> f64 {
+        match self {
+            DefencePrayer::None => 1.0,
+            DefencePrayer::RockSkin => 1.05,
+            DefencePrayer::SuperhumanDefence => 1.10,
+            DefencePrayer::UltimateDefence => 1.15,
+            DefencePrayer::Chivalry => 1.15,
+            DefencePrayer::Piety => 1.20,
+        }
+    }
+}
+
 /// The player doing the attacking.
 #[derive(Debug, Clone)]
 pub struct Attacker {
@@ -50,12 +143,10 @@ pub struct Attacker {
     pub strength_boost: i32,
     /// Temporary attack level boost (potion, cape, etc.).
     pub attack_boost: i32,
-    /// Strength prayer multiplier.
-    /// Burst of Strength 1.05, Superhuman 1.10, Ultimate 1.15, Chivalry 1.18, Piety 1.23.
-    pub prayer_strength_mult: f64,
-    /// Attack prayer multiplier.
-    /// Clarity 1.05, Improved Reflexes 1.10, Incredible Reflexes 1.15, Chivalry 1.15, Piety 1.20.
-    pub prayer_attack_mult: f64,
+    /// Strength prayer being used.
+    pub strength_prayer: StrengthPrayer,
+    /// Attack prayer being used.
+    pub attack_prayer: AttackPrayer,
     /// "Melee Strength" bonus from the equipment stats window.
     pub equipment_strength_bonus: i32,
     /// Stab/Slash/Crush bonus matching the weapon's attack type.
@@ -75,8 +166,8 @@ pub struct Target {
     pub defence: u32,
     /// Temporary defence boost (player targets only).
     pub defence_boost: i32,
-    /// Defence prayer multiplier (player targets only; e.g. 1.15 incredible protection, 1.20 piety).
-    pub prayer_defence_mult: f64,
+    /// Defence prayer being used (player targets only).
+    pub defence_prayer: DefencePrayer,
     /// Player target's attack style (affects defence style bonus; player targets only).
     pub attack_style: AttackStyle,
     /// Target's stab/slash/crush defence bonus matching the attack type.
@@ -112,7 +203,7 @@ impl MeleeDps {
         let effective_strength = effective_level(
             attacker.strength,
             attacker.strength_boost,
-            attacker.prayer_strength_mult,
+            attacker.strength_prayer.multiplier(),
             strength_style_bonus,
             attacker.void,
         );
@@ -138,7 +229,7 @@ impl MeleeDps {
         let effective_attack = effective_level(
             attacker.attack,
             attacker.attack_boost,
-            attacker.prayer_attack_mult,
+            attacker.attack_prayer.multiplier(),
             attack_style_bonus,
             attacker.void,
         );
@@ -159,7 +250,7 @@ impl MeleeDps {
             let eff = effective_level(
                 target.defence,
                 target.defence_boost,
-                target.prayer_defence_mult,
+                target.defence_prayer.multiplier(),
                 def_style_bonus,
                 false,
             );
@@ -255,8 +346,8 @@ mod tests {
             attack: 99,
             strength_boost: 10,
             attack_boost: 10,
-            prayer_strength_mult: 1.23,
-            prayer_attack_mult: 1.20,
+            strength_prayer: StrengthPrayer::Piety,
+            attack_prayer: AttackPrayer::Piety,
             equipment_strength_bonus: 60,
             equipment_attack_bonus: 80,
             attack_style: AttackStyle::Aggressive,
@@ -268,7 +359,7 @@ mod tests {
             is_player: false,
             defence: 50,
             defence_boost: 0,
-            prayer_defence_mult: 1.0,
+            defence_prayer: DefencePrayer::None,
             attack_style: AttackStyle::Aggressive,
             defence_bonus: 40,
             protect_from_melee: false,
@@ -303,8 +394,8 @@ mod tests {
             attack: 99,
             strength_boost: 10,
             attack_boost: 10,
-            prayer_strength_mult: 1.23,
-            prayer_attack_mult: 1.20,
+            strength_prayer: StrengthPrayer::Piety,
+            attack_prayer: AttackPrayer::Piety,
             equipment_strength_bonus: 60,
             equipment_attack_bonus: 80,
             attack_style: AttackStyle::Aggressive,
@@ -316,7 +407,7 @@ mod tests {
             is_player: true,
             defence: 99,
             defence_boost: 15,
-            prayer_defence_mult: 1.20,
+            defence_prayer: DefencePrayer::Piety,
             attack_style: AttackStyle::Defensive,
             defence_bonus: 100,
             protect_from_melee: true,
@@ -341,8 +432,8 @@ mod tests {
             attack: 1,
             strength_boost: 0,
             attack_boost: 0,
-            prayer_strength_mult: 1.0,
-            prayer_attack_mult: 1.0,
+            strength_prayer: StrengthPrayer::None,
+            attack_prayer: AttackPrayer::None,
             // Bonus of -64 zeroes the strength term: (eff_str * 0 + 320) / 640 = 0.5 -> 0
             equipment_strength_bonus: -64,
             equipment_attack_bonus: 0,
@@ -354,7 +445,7 @@ mod tests {
             is_player: false,
             defence: 1,
             defence_boost: 0,
-            prayer_defence_mult: 1.0,
+            defence_prayer: DefencePrayer::None,
             attack_style: AttackStyle::Aggressive,
             defence_bonus: 0,
             protect_from_melee: false,

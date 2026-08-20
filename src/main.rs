@@ -1,4 +1,4 @@
-use osrs_dps_calculator::{AttackStyle, Attacker, GearBonus, MeleeDps, Target};
+use osrs_dps_calculator::{AttackPrayer, AttackStyle, Attacker, DefencePrayer, GearBonus, MeleeDps, StrengthPrayer, Target};
 
 fn main() {
     // High-level melee setup: 99/99, +19/+19 boosts, piety, aggressive
@@ -9,8 +9,8 @@ fn main() {
         attack: 99,
         strength_boost: 19,
         attack_boost: 19,
-        prayer_strength_mult: 1.23, // piety
-        prayer_attack_mult: 1.20,   // piety
+        strength_prayer: StrengthPrayer::Piety,
+        attack_prayer: AttackPrayer::Piety,
         equipment_strength_bonus: 105,
         equipment_attack_bonus: 80,
         attack_style: AttackStyle::Aggressive,
@@ -23,7 +23,7 @@ fn main() {
         is_player: false,
         defence: 87,
         defence_boost: 0,
-        prayer_defence_mult: 1.0,
+        defence_prayer: DefencePrayer::None,
         attack_style: AttackStyle::Aggressive,
         defence_bonus: 60,
         protect_from_melee: false,
@@ -39,7 +39,7 @@ fn main() {
         is_player: true,
         defence: 99,
         defence_boost: 15,
-        prayer_defence_mult: 1.20, // piety
+        defence_prayer: DefencePrayer::Piety,
         attack_style: AttackStyle::Defensive,
         defence_bonus: 122,
         protect_from_melee: true,

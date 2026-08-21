@@ -176,6 +176,16 @@ impl WeaponStats {
 	}
 }
 
+/// Rune scimitar.
+/// <https://oldschool.runescape.wiki/w/Rune_scimitar>
+pub const RUNE_SCIMITAR: WeaponStats = WeaponStats {
+	stab: 7,
+	slash: 45,
+	crush: -2,
+	strength: 44,
+	attack_speed: GameTicks(4),
+};
+
 /// Dragon scimitar.
 /// <https://oldschool.runescape.wiki/w/Scimitar>
 pub const DRAGON_SCIMITAR: WeaponStats = WeaponStats {

@@ -1,5 +1,5 @@
 use osrs_dps_calculator::{
-	ABYSSAL_WHIP, AttackPrayer, AttackStyle, Attacker, GearBonus, MeleeDps, NpcTarget,
+	AttackPrayer, AttackStyle, Attacker, GearBonus, MeleeDps, NpcTarget, RUNE_SCIMITAR,
 	StrengthPrayer, Target,
 };
 
@@ -100,7 +100,7 @@ fn base_attacker() -> Attacker {
 		attack_boost: 0,
 		strength_prayer: StrengthPrayer::None,
 		attack_prayer: AttackPrayer::None,
-		weapon: ABYSSAL_WHIP,
+		weapon: RUNE_SCIMITAR,
 		attack_style: AttackStyle::Aggressive,
 		void: true,
 		gear_bonus: GearBonus::None,

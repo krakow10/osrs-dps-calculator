@@ -17,12 +17,21 @@ fn level_exp_table() -> [u32; 100] {
 	t
 }
 
-/// DPS at a given (attack, strength), keeping the rest of the attacker
-/// setup and target fixed.
-fn dps_of<T: Target>(attacker: &Attacker, target: &T, attack: u32, strength: u32) -> f64 {
-	let mut atk = *attacker;
-	atk.attack = attack;
-	atk.strength = strength;
+/// DPS at a given (attack, strength) and attack style, keeping the rest of the
+/// attacker setup and target fixed.
+fn dps_of<T: Target>(
+	attacker: &Attacker,
+	target: &T,
+	attack: u32,
+	strength: u32,
+	attack_style: AttackStyle,
+) -> f64 {
+	let atk = Attacker {
+		attack,
+		strength,
+		attack_style,
+		..*attacker
+	};
 	MeleeDps::calculate(&atk, target).dps
 }
 
@@ -30,6 +39,10 @@ fn dps_of<T: Target>(attacker: &Attacker, target: &T, attack: u32, strength: u32
 /// minimizes the total time, where the time spent on each level-up is
 /// proportional to the exp needed for that level divided by the DPS at
 /// the state you're in while leveling it up.
+///
+/// The attack style used while leveling matters: attack can only be
+/// leveled with the Accurate style and strength with the Aggressive style,
+/// so each level-up edge is priced at the DPS of the style that trains it.
 ///
 /// The leveling graph is a DAG (edges only increase attack or strength),
 /// so a topological-order DP finds the optimum exactly.
@@ -50,10 +63,11 @@ fn solve<T: Target>(attacker: &Attacker, target: &T, max: u32) -> Vec<(u32, u32,
 		for s in 1..=max {
 			let i = idx(a, s);
 			let d = dist[i];
-			let dps = dps_of(attacker, target, a, s);
+			let attack_dps = dps_of(attacker, target, a, s, AttackStyle::Accurate);
+			let strength_dps = dps_of(attacker, target, a, s, AttackStyle::Aggressive);
 			if a < max {
 				let j = idx(a + 1, s);
-				let nd = d + exp_gain(a) / dps;
+				let nd = d + exp_gain(a) / attack_dps;
 				if nd < dist[j] {
 					dist[j] = nd;
 					came[j] = 0;
@@ -61,7 +75,7 @@ fn solve<T: Target>(attacker: &Attacker, target: &T, max: u32) -> Vec<(u32, u32,
 			}
 			if s < max {
 				let j = idx(a, s + 1);
-				let nd = d + exp_gain(s) / dps;
+				let nd = d + exp_gain(s) / strength_dps;
 				if nd < dist[j] {
 					dist[j] = nd;
 					came[j] = 1;
@@ -91,8 +105,9 @@ fn solve<T: Target>(attacker: &Attacker, target: &T, max: u32) -> Vec<(u32, u32,
 }
 
 fn base_attacker() -> Attacker {
-	// High-level melee setup: 99/99, aggressive style, full melee void,
-	// wielding an abyssal whip (82 str / 82 atk, 2.4s attack speed).
+	// High-level melee setup: 99/99, full melee void, 44 str / 45 atk
+	// equipment bonus, 4-tick (2.4s) attack speed. The aggressive style is
+	// just the default; `dps_of` picks the style that trains each skill.
 	Attacker {
 		strength: 99,
 		attack: 99,
@@ -122,13 +137,26 @@ fn main() {
 	let path = solve(&attacker, &target, MAX_LEVEL);
 
 	println!("Optimal leveling path 1/1 -> 99/99 (minimizes sum of exp / dps):");
-	let mut prev = 0.0;
-	for &(attack, strength, total) in &path {
-		let step = total - prev;
-		prev = total;
-		let dps = dps_of(&attacker, &target, attack, strength);
+	for (i, &(attack, strength, total)) in path.iter().enumerate() {
+		// The step into this node was taken from the previous state, using the
+		// style that trains the skill that was leveled up (accurate for attack,
+		// aggressive for strength). That is the DPS the step was priced at.
+		let (prev_attack, prev_strength, prev_total): (u32, u32, f64) =
+			if i == 0 { (1, 1, 0.0) } else { path[i - 1] };
+		let step = total - prev_total;
+		let style = if attack != prev_attack {
+			AttackStyle::Accurate
+		} else {
+			AttackStyle::Aggressive
+		};
+		let dps = dps_of(&attacker, &target, prev_attack, prev_strength, style);
+		let style_name = match style {
+			AttackStyle::Accurate => "accurate",
+			AttackStyle::Aggressive => "aggressive",
+			_ => unreachable!("leveling only uses the accurate or aggressive style"),
+		};
 		println!(
-			"att={attack:02} str={strength:02}  step={step:>12.4}  total={total:>12.4}  dps={dps:.4}"
+			"att={attack:02} str={strength:02}  step={step:>12.4}  total={total:>12.4}  {style_name:>10} dps={dps:.4}"
 		);
 	}
 	println!(
@@ -166,14 +194,16 @@ mod tests {
 				*best = best.min(acc);
 				return;
 			}
-			let dps = dps_of(attacker, target, a, s);
-			let cost = |l: u32| (level_exp[(l + 1) as usize] - level_exp[l as usize]) as f64 / dps;
+			let exp_gain = |l: u32| (level_exp[(l + 1) as usize] - level_exp[l as usize]) as f64;
+			// Mirror `solve`: attack level-ups are priced at the accurate style,
+			// strength level-ups at the aggressive style.
 			if a < max {
+				let dps = dps_of(attacker, target, a, s, AttackStyle::Accurate);
 				rec(
 					a + 1,
 					s,
 					max,
-					acc + cost(a),
+					acc + exp_gain(a) / dps,
 					level_exp,
 					attacker,
 					target,
@@ -181,11 +211,12 @@ mod tests {
 				);
 			}
 			if s < max {
+				let dps = dps_of(attacker, target, a, s, AttackStyle::Aggressive);
 				rec(
 					a,
 					s + 1,
 					max,
-					acc + cost(s),
+					acc + exp_gain(s) / dps,
 					level_exp,
 					attacker,
 					target,

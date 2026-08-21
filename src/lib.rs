@@ -3,6 +3,8 @@
 //! Implements the formulas from the OSRS wiki "Damage per second/Melee" page:
 //! <https://oldschool.runescape.wiki/w/Damage_per_second/Melee>
 
+pub mod grid;
+
 /// Melee attack style.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AttackStyle {

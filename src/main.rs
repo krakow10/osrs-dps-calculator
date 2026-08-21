@@ -1,6 +1,6 @@
 use osrs_dps_calculator::{
-	AttackPrayer, AttackStyle, Attacker, GameTicks, GearBonus, MeleeDps, NpcTarget, StrengthPrayer,
-	Target,
+	ABYSSAL_WHIP, AttackPrayer, AttackStyle, Attacker, GearBonus, MeleeDps, NpcTarget,
+	StrengthPrayer, Target,
 };
 
 /// Highest level we care about for attack and strength.
@@ -92,7 +92,7 @@ fn solve<T: Target>(attacker: &Attacker, target: &T, max: u32) -> Vec<(u32, u32,
 
 fn base_attacker() -> Attacker {
 	// High-level melee setup: 99/99, aggressive style, full melee void,
-	// 40 str / 40 atk equipment bonus, 4-tick (2.4s) attack speed.
+	// wielding an abyssal whip (82 str / 82 atk, 2.4s attack speed).
 	Attacker {
 		strength: 99,
 		attack: 99,
@@ -100,12 +100,10 @@ fn base_attacker() -> Attacker {
 		attack_boost: 0,
 		strength_prayer: StrengthPrayer::None,
 		attack_prayer: AttackPrayer::None,
-		equipment_strength_bonus: 40,
-		equipment_attack_bonus: 40,
+		weapon: ABYSSAL_WHIP,
 		attack_style: AttackStyle::Aggressive,
 		void: true,
 		gear_bonus: GearBonus::None,
-		attack_speed: GameTicks(4),
 	}
 }
 

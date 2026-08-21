@@ -148,6 +148,64 @@ impl GameTicks {
 	}
 }
 
+/// Bonuses provided by a melee weapon, as listed on the OSRS wiki.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WeaponStats {
+	/// Stab attack bonus.
+	pub stab: i32,
+	/// Slash attack bonus.
+	pub slash: i32,
+	/// Crush attack bonus.
+	pub crush: i32,
+	/// Strength bonus.
+	pub strength: i32,
+	/// Ticks per attack.
+	pub attack_speed: GameTicks,
+}
+
+impl WeaponStats {
+	/// Attack bonus for the given style.
+	///
+	/// One-handed weapons: only the controlled style uses the stab bonus;
+	/// every other style uses the slash bonus.
+	pub fn attack_bonus(self, style: AttackStyle) -> i32 {
+		match style {
+			AttackStyle::Controlled => self.stab,
+			_ => self.slash,
+		}
+	}
+}
+
+/// Dragon scimitar.
+/// <https://oldschool.runescape.wiki/w/Scimitar>
+pub const DRAGON_SCIMITAR: WeaponStats = WeaponStats {
+	stab: 8,
+	slash: 67,
+	crush: -2,
+	strength: 66,
+	attack_speed: GameTicks(4),
+};
+
+/// Abyssal whip.
+/// <https://oldschool.runescape.wiki/w/Abyssal_whip>
+pub const ABYSSAL_WHIP: WeaponStats = WeaponStats {
+	stab: 0,
+	slash: 82,
+	crush: 0,
+	strength: 82,
+	attack_speed: GameTicks(4),
+};
+
+/// Blade of Saeldor, fully charged (the inactive blade has all bonuses +0).
+/// <https://oldschool.runescape.wiki/w/Blade_of_Saeldor>
+pub const BLADE_OF_SAELDOR: WeaponStats = WeaponStats {
+	stab: 0,
+	slash: 100,
+	crush: 0,
+	strength: 93,
+	attack_speed: GameTicks(4),
+};
+
 /// The player doing the attacking.
 #[derive(Debug, Clone, Copy)]
 pub struct Attacker {
@@ -161,18 +219,14 @@ pub struct Attacker {
 	pub strength_prayer: StrengthPrayer,
 	/// Attack prayer being used.
 	pub attack_prayer: AttackPrayer,
-	/// "Melee Strength" bonus from the equipment stats window.
-	pub equipment_strength_bonus: i32,
-	/// Stab/Slash/Crush bonus matching the weapon's attack type.
-	pub equipment_attack_bonus: i32,
+	/// The weapon being wielded.
+	pub weapon: WeaponStats,
 	pub attack_style: AttackStyle,
 	/// Wearing full melee void.
 	pub void: bool,
 	/// Damage/accuracy bonus from a salve amulet or slayer helm. Only applies
 	/// to NPC targets.
 	pub gear_bonus: GearBonus,
-	/// Weapon attack speed, in ticks per attack.
-	pub attack_speed: GameTicks,
 }
 
 /// The target being attacked.
@@ -305,7 +359,7 @@ impl MeleeDps {
 		// --- Step two: max hit ------------------------------------------------
 		// eff_strength * (str bonus + 64) + 320, / 640, floor, then gear bonus, floor.
 		let max_hit_base = ((effective_strength as f64
-			* (attacker.equipment_strength_bonus as f64 + 64.0)
+			* (attacker.weapon.strength as f64 + 64.0)
 			+ 320.0) / 640.0)
 			.floor() as u64;
 		let mut max_hit = (max_hit_base as f64 * gear.multiplier()).floor() as u64;
@@ -330,7 +384,7 @@ impl MeleeDps {
 
 		// --- Step four: attack roll --------------------------------------------
 		let attack_roll = (effective_attack as f64
-			* (attacker.equipment_attack_bonus as f64 + 64.0)
+			* (attacker.weapon.attack_bonus(attacker.attack_style) as f64 + 64.0)
 			* gear.multiplier())
 		.floor() as u32;
 
@@ -354,7 +408,7 @@ impl MeleeDps {
 		} else {
 			hit_chance * (max_hit as f64 / 2.0 + 1.0 / max_hit as f64 + 1.0)
 		};
-		let dps = average_damage_per_attack / attacker.attack_speed.as_seconds();
+		let dps = average_damage_per_attack / attacker.weapon.attack_speed.as_seconds();
 
 		MeleeDps {
 			effective_strength,
@@ -413,7 +467,7 @@ mod tests {
 	#[test]
 	fn npc_target_matches_hand_calculation() {
 		// 99/99 with +10/+10, piety (1.23 str / 1.20 atk), aggressive style,
-		// no void, str bonus 60, atk bonus 80, 1.0s weapon.
+		// no void, weapon with 80 atk / 60 str bonus, 2-tick speed.
 		let attacker = Attacker {
 			strength: 99,
 			attack: 99,
@@ -421,12 +475,16 @@ mod tests {
 			attack_boost: 10,
 			strength_prayer: StrengthPrayer::Piety,
 			attack_prayer: AttackPrayer::Piety,
-			equipment_strength_bonus: 60,
-			equipment_attack_bonus: 80,
+			weapon: WeaponStats {
+				stab: 80,
+				slash: 80,
+				crush: 0,
+				strength: 60,
+				attack_speed: GameTicks(2),
+			},
 			attack_style: AttackStyle::Aggressive,
 			void: false,
 			gear_bonus: GearBonus::None,
-			attack_speed: GameTicks(2),
 		};
 		// NPC with 50 def, 40 def bonus.
 		let target = NpcTarget {
@@ -466,13 +524,17 @@ mod tests {
 			attack_boost: 10,
 			strength_prayer: StrengthPrayer::Piety,
 			attack_prayer: AttackPrayer::Piety,
-			equipment_strength_bonus: 60,
-			equipment_attack_bonus: 80,
+			weapon: WeaponStats {
+				stab: 80,
+				slash: 80,
+				crush: 0,
+				strength: 60,
+				attack_speed: GameTicks(2),
+			},
 			attack_style: AttackStyle::Aggressive,
 			void: false,
 			// Salve bonuses don't apply to player targets, so this must be ignored.
 			gear_bonus: GearBonus::EnhancedSalve,
-			attack_speed: GameTicks(2),
 		};
 		// Player target: 99 def +15, piety (1.20), defensive style, 100 def bonus, PFM.
 		let target = PlayerTarget {
@@ -505,13 +567,17 @@ mod tests {
 			attack_boost: 0,
 			strength_prayer: StrengthPrayer::None,
 			attack_prayer: AttackPrayer::None,
-			// Bonus of -64 zeroes the strength term: (eff_str * 0 + 320) / 640 = 0.5 -> 0
-			equipment_strength_bonus: -64,
-			equipment_attack_bonus: 0,
+			// Weapon with -64 str zeroes the strength term: (eff_str * 0 + 320) / 640 = 0.5 -> 0
+			weapon: WeaponStats {
+				stab: 0,
+				slash: 0,
+				crush: 0,
+				strength: -64,
+				attack_speed: GameTicks(2),
+			},
 			attack_style: AttackStyle::Aggressive,
 			void: false,
 			gear_bonus: GearBonus::None,
-			attack_speed: GameTicks(2),
 		};
 		let target = NpcTarget {
 			defence: 1,
@@ -522,5 +588,69 @@ mod tests {
 		assert_eq!(r.max_hit, 0);
 		// Every successful hit rolls 0 and is bumped up to 1.
 		assert!((r.average_damage_per_attack - r.hit_chance).abs() < 1e-12);
+	}
+
+	#[test]
+	fn blade_of_saeldor_aggressive() {
+		// 99/99, no boosts or prayers, aggressive style, full void,
+		// fully charged blade of Saeldor vs. an NPC with 1 def and 0 def bonus.
+		let attacker = Attacker {
+			strength: 99,
+			attack: 99,
+			strength_boost: 0,
+			attack_boost: 0,
+			strength_prayer: StrengthPrayer::None,
+			attack_prayer: AttackPrayer::None,
+			weapon: BLADE_OF_SAELDOR,
+			attack_style: AttackStyle::Aggressive,
+			void: true,
+			gear_bonus: GearBonus::None,
+		};
+		let target = NpcTarget {
+			defence: 1,
+			defence_bonus: 0,
+		};
+
+		let r = MeleeDps::calculate(&attacker, &target);
+
+		// eff strength: floor((99 + 3 + 8) * 1.1) = 121
+		assert_eq!(r.effective_strength, 121);
+		// max hit: floor((121 * 157 + 320) / 640) = floor(30.18) = 30
+		assert_eq!(r.max_hit, 30);
+		// eff attack: floor((99 + 0 + 8) * 1.1) = floor(117.7) = 117
+		assert_eq!(r.effective_attack, 117);
+		// attack roll: 117 * (100 + 64) = 19188
+		assert_eq!(r.attack_roll, 19_188);
+		// def roll: (1 + 9) * (0 + 64) = 640
+		assert_eq!(r.defence_roll, 640);
+	}
+
+	#[test]
+	fn blade_of_saeldor_controlled() {
+		// Same setup, but the controlled style uses the weapon's stab bonus (0)
+		// instead of its slash bonus (100).
+		let attacker = Attacker {
+			strength: 99,
+			attack: 99,
+			strength_boost: 0,
+			attack_boost: 0,
+			strength_prayer: StrengthPrayer::None,
+			attack_prayer: AttackPrayer::None,
+			weapon: BLADE_OF_SAELDOR,
+			attack_style: AttackStyle::Controlled,
+			void: true,
+			gear_bonus: GearBonus::None,
+		};
+		let target = NpcTarget {
+			defence: 1,
+			defence_bonus: 0,
+		};
+
+		let r = MeleeDps::calculate(&attacker, &target);
+
+		// eff attack: floor((99 + 1 + 8) * 1.1) = floor(118.8) = 118
+		assert_eq!(r.effective_attack, 118);
+		// attack roll: 118 * (0 + 64) = 7552
+		assert_eq!(r.attack_roll, 7_552);
 	}
 }

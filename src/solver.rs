@@ -48,12 +48,12 @@ struct GridPoint {
 /// The solved leveling grid: the minimum total time to reach each
 /// (attack, strength) node from 1/1, the skill that was leveled up to
 /// reach it, and the DPS the level-up was priced at.
-pub struct Grid<const MAX: usize> {
+pub struct Solver<const MAX: usize> {
 	/// `points[a - 1][s - 1]` is node (a, s).
 	points: [[GridPoint; MAX]; MAX],
 }
 
-impl<const MAX: usize> Grid<MAX> {
+impl<const MAX: usize> Solver<MAX> {
 	/// Find the attack/strength leveling path from 1/1 to MAX/MAX that
 	/// minimizes the total time, and return the solved grid.
 	///
@@ -73,18 +73,18 @@ impl<const MAX: usize> Grid<MAX> {
 			attack: a as u32,
 			strength: s as u32,
 		};
-		let mut grid = Grid {
+		let mut solver = Solver {
 			points: [[GridPoint {
 				came: Skill::Attack,
 				dist: f64::INFINITY,
 				dps: 0.0,
 			}; MAX]; MAX],
 		};
-		grid.points[0][0].dist = 0.0;
+		solver.points[0][0].dist = 0.0;
 
 		for a in 1..=MAX {
 			for s in 1..=MAX {
-				let d = grid.points[a - 1][s - 1].dist;
+				let d = solver.points[a - 1][s - 1].dist;
 				for skill in [Skill::Attack, Skill::Strength] {
 					let (attack, strength, level) = match skill {
 						Skill::Attack => (a + 1, s, a),
@@ -95,7 +95,7 @@ impl<const MAX: usize> Grid<MAX> {
 					}
 					let dps = dps_of(attacker, target, levels(a, s), skill.style());
 					let nd = d + exp_gain(level) / dps;
-					let dest = &mut grid.points[attack - 1][strength - 1];
+					let dest = &mut solver.points[attack - 1][strength - 1];
 					if nd < dest.dist {
 						dest.dist = nd;
 						dest.came = skill;
@@ -105,7 +105,7 @@ impl<const MAX: usize> Grid<MAX> {
 			}
 		}
 
-		grid
+		solver
 	}
 
 	/// The optimal sequence of skill level-ups from 1/1 to MAX/MAX, in order.
@@ -166,7 +166,7 @@ fn dps_of<T: Target>(attacker: &Attacker, target: &T, levels: Levels, style: Att
 /// Print the path one line per level-up, showing the step time, the
 /// cumulative time, and the style (and DPS) the step was priced at. The
 /// per-step values are read straight from the grid's points.
-pub fn print_path<const MAX: usize>(grid: &Grid<MAX>, path: &[Skill]) {
+pub fn print_path<const MAX: usize>(solver: &Solver<MAX>, path: &[Skill]) {
 	println!("Optimal leveling path 1/1 -> {MAX}/{MAX} (minimizes sum of exp / dps):");
 	let mut a = 1usize;
 	let mut s = 1usize;
@@ -178,10 +178,10 @@ pub fn print_path<const MAX: usize>(grid: &Grid<MAX>, path: &[Skill]) {
 			Skill::Attack => (a + 1, s),
 			Skill::Strength => (a, s + 1),
 		};
-		let point = &grid.points[a - 1][s - 1];
+		let point = &solver.points[a - 1][s - 1];
 		let prev = match skill {
-			Skill::Attack => &grid.points[a - 2][s - 1],
-			Skill::Strength => &grid.points[a - 1][s - 2],
+			Skill::Attack => &solver.points[a - 2][s - 1],
+			Skill::Strength => &solver.points[a - 1][s - 2],
 		};
 		let time = point.dist - prev.dist;
 		total = point.dist;
@@ -236,15 +236,15 @@ mod tests {
 	}
 
 	/// Exhaustive check of the optimum over every monotone path on a small
-	/// grid, as an independent verification of `Grid::new`'s DP.
+	/// grid, as an independent verification of `Solver::new`'s DP.
 	#[test]
-	fn grid_matches_brute_force() {
+	fn solver_matches_brute_force() {
 		const MAX: usize = 6;
 		let attacker = base_attacker();
 		let target = test_target();
 
-		let grid = Grid::<MAX>::new(&attacker, &target);
-		let total = grid.points[MAX - 1][MAX - 1].dist;
+		let solver = Solver::<MAX>::new(&attacker, &target);
+		let total = solver.points[MAX - 1][MAX - 1].dist;
 
 		fn rec<T: Target>(
 			a: usize,
@@ -265,7 +265,7 @@ mod tests {
 				strength: s as u32,
 			};
 			let exp_gain = |l: usize| (level_exp[l + 1] - level_exp[l]) as f64;
-			// Mirror `Grid::new`: attack level-ups are priced at the accurate style,
+			// Mirror `Solver::new`: attack level-ups are priced at the accurate style,
 			// strength level-ups at the aggressive style.
 			if a < max {
 				let dps = dps_of(attacker, target, levels, Skill::Attack.style());
@@ -304,15 +304,15 @@ mod tests {
 		let mut running = 0.0;
 		let mut a = 1usize;
 		let mut s = 1usize;
-		for skill in grid.path() {
+		for skill in solver.path() {
 			(a, s) = match skill {
 				Skill::Attack => (a + 1, s),
 				Skill::Strength => (a, s + 1),
 			};
-			let point = &grid.points[a - 1][s - 1];
+			let point = &solver.points[a - 1][s - 1];
 			let prev = match skill {
-				Skill::Attack => &grid.points[a - 2][s - 1],
-				Skill::Strength => &grid.points[a - 1][s - 2],
+				Skill::Attack => &solver.points[a - 2][s - 1],
+				Skill::Strength => &solver.points[a - 1][s - 2],
 			};
 			let step_total = point.dist;
 			let step_time = point.dist - prev.dist;

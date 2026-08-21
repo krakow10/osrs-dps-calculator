@@ -1,6 +1,6 @@
 use osrs_dps_calculator::{
 	AttackPrayer, AttackStyle, Attacker, GearBonus, NpcTarget, RUNE_SCIMITAR, StrengthPrayer,
-	grid::{Grid, print_path},
+	solver::{print_path, Solver},
 };
 
 /// Highest level we care about for attack and strength.
@@ -36,7 +36,7 @@ fn main() {
 	let attacker = base_attacker();
 	let target = test_target();
 
-	let grid = Grid::<MAX_LEVEL>::new(&attacker, &target);
-	let path = grid.path();
-	print_path(&grid, &path);
+	let solver = Solver::<MAX_LEVEL>::new(&attacker, &target);
+	let path = solver.path();
+	print_path(&solver, &path);
 }

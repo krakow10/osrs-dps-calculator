@@ -1,5 +1,6 @@
 use osrs_dps_calculator::{
-	AttackPrayer, AttackStyle, Attacker, GameTicks, GearBonus, MeleeDps, StrengthPrayer, Target,
+	AttackPrayer, AttackStyle, Attacker, GameTicks, GearBonus, MeleeDps, NpcTarget, StrengthPrayer,
+	Target,
 };
 
 /// Highest level we care about for attack and strength.
@@ -18,7 +19,7 @@ fn level_exp_table() -> [u32; 100] {
 
 /// DPS at a given (attack, strength), keeping the rest of the attacker
 /// setup and target fixed.
-fn dps_of(attacker: &Attacker, target: &Target, attack: u32, strength: u32) -> f64 {
+fn dps_of<T: Target>(attacker: &Attacker, target: &T, attack: u32, strength: u32) -> f64 {
 	let mut atk = *attacker;
 	atk.attack = attack;
 	atk.strength = strength;
@@ -34,7 +35,7 @@ fn dps_of(attacker: &Attacker, target: &Target, attack: u32, strength: u32) -> f
 /// so a topological-order DP finds the optimum exactly.
 ///
 /// Returns the path (start to goal) with the cumulative time at each node.
-fn solve(attacker: &Attacker, target: &Target, max: u32) -> Vec<(u32, u32, f64)> {
+fn solve<T: Target>(attacker: &Attacker, target: &T, max: u32) -> Vec<(u32, u32, f64)> {
 	let n = max as usize;
 	let idx = |a: u32, s: u32| (a - 1) as usize * n + (s - 1) as usize;
 	let level_exp = level_exp_table();
@@ -108,9 +109,9 @@ fn base_attacker() -> Attacker {
 	}
 }
 
-fn test_target() -> Target {
+fn test_target() -> NpcTarget {
 	// PvM: NPC with 1 def and 0 def bonus.
-	Target::Npc {
+	NpcTarget {
 		defence: 1,
 		defence_bonus: 0,
 	}
@@ -153,14 +154,14 @@ mod tests {
 		let path = solve(&attacker, &target, MAX);
 		let total = path.last().expect("path is non-empty").2;
 
-		fn rec(
+		fn rec<T: Target>(
 			a: u32,
 			s: u32,
 			max: u32,
 			acc: f64,
 			level_exp: &[u32; 100],
 			attacker: &Attacker,
-			target: &Target,
+			target: &T,
 			best: &mut f64,
 		) {
 			if (a, s) == (max, max) {

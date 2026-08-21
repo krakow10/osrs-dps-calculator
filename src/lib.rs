@@ -175,31 +175,93 @@ pub struct Attacker {
 	pub attack_speed: GameTicks,
 }
 
-/// The target being attacked (an NPC or a player).
+/// The target being attacked.
+///
+/// A trait (rather than an enum) so the target-specific logic lives on the
+/// target type itself and `MeleeDps::calculate` dispatches statically to
+/// the concrete type at compile time.
+pub trait Target {
+	/// Whether the attacker's salve amulet / slayer helm bonus applies.
+	///
+	/// Per the wiki, these bonuses only work on monsters.
+	const ACCEPTS_GEAR_BONUS: bool;
+
+	/// Whether protect from melee is active.
+	fn protect_from_melee(&self) -> bool {
+		false
+	}
+
+	/// `(effective_defence, defence_roll)` for this target.
+	///
+	/// NPCs have no effective level and use `(defence + 9) * (defence bonus + 64)`;
+	/// players use the effective defence level derived from their base level,
+	/// boost, prayer, and attack style.
+	fn defence(&self) -> (Option<u32>, u32);
+}
+
+/// NPC target.
 #[derive(Debug, Clone)]
-pub enum Target {
-	/// NPC target.
-	Npc {
-		/// Base defence level: the shield-icon value on the wiki.
-		defence: u32,
-		/// Target's stab/slash/crush defence bonus matching the attack type.
-		defence_bonus: i32,
-	},
-	/// Player target.
-	Player {
-		/// Base defence level.
-		defence: u32,
-		/// Temporary defence boost.
-		defence_boost: i32,
-		/// Defence prayer being used.
-		defence_prayer: DefencePrayer,
-		/// Attack style (affects defence style bonus).
-		attack_style: AttackStyle,
-		/// Target's stab/slash/crush defence bonus matching the attack type.
-		defence_bonus: i32,
-		/// Protect from Melee active.
-		protect_from_melee: bool,
-	},
+pub struct NpcTarget {
+	/// Base defence level: the shield-icon value on the wiki.
+	pub defence: u32,
+	/// Target's stab/slash/crush defence bonus matching the attack type.
+	pub defence_bonus: i32,
+}
+
+impl Target for NpcTarget {
+	const ACCEPTS_GEAR_BONUS: bool = true;
+
+	fn defence(&self) -> (Option<u32>, u32) {
+		// NPC: (defence level + 9) * (defence bonus + 64)
+		(
+			None,
+			((u64::from(self.defence) + 9) * (self.defence_bonus as u64 + 64)) as u32,
+		)
+	}
+}
+
+/// Player target.
+#[derive(Debug, Clone)]
+pub struct PlayerTarget {
+	/// Base defence level.
+	pub defence: u32,
+	/// Temporary defence boost.
+	pub defence_boost: i32,
+	/// Defence prayer being used.
+	pub defence_prayer: DefencePrayer,
+	/// Attack style (affects defence style bonus).
+	pub attack_style: AttackStyle,
+	/// Target's stab/slash/crush defence bonus matching the attack type.
+	pub defence_bonus: i32,
+	/// Protect from Melee active.
+	pub protect_from_melee: bool,
+}
+
+impl Target for PlayerTarget {
+	const ACCEPTS_GEAR_BONUS: bool = false;
+
+	fn protect_from_melee(&self) -> bool {
+		self.protect_from_melee
+	}
+
+	fn defence(&self) -> (Option<u32>, u32) {
+		let def_style_bonus = match self.attack_style {
+			AttackStyle::Defensive => 3,
+			AttackStyle::Controlled => 1,
+			_ => 0,
+		};
+		let eff = effective_level(
+			self.defence,
+			self.defence_boost,
+			self.defence_prayer.multiplier(),
+			def_style_bonus,
+			false,
+		);
+		(
+			Some(eff),
+			(eff as u64 * (self.defence_bonus as u64 + 64)) as u32,
+		)
+	}
 }
 
 /// All intermediate values and the final DPS.
@@ -219,11 +281,12 @@ pub struct MeleeDps {
 
 impl MeleeDps {
 	/// Calculate melee DPS using the formulas from the OSRS wiki.
-	pub fn calculate(attacker: &Attacker, target: &Target) -> MeleeDps {
+	pub fn calculate<T: Target>(attacker: &Attacker, target: &T) -> MeleeDps {
 		// Salve amulet and slayer helm bonuses only work on monsters.
-		let gear = match target {
-			Target::Npc { .. } => attacker.gear_bonus,
-			Target::Player { .. } => GearBonus::None,
+		let gear = if T::ACCEPTS_GEAR_BONUS {
+			attacker.gear_bonus
+		} else {
+			GearBonus::None
 		};
 		// --- Step one: effective strength level -------------------------------
 		let strength_style_bonus = match attacker.attack_style {
@@ -246,11 +309,7 @@ impl MeleeDps {
 			+ 320.0) / 640.0)
 			.floor() as u64;
 		let mut max_hit = (max_hit_base as f64 * gear.multiplier()).floor() as u64;
-		if let Target::Player {
-			protect_from_melee: true,
-			..
-		} = target
-		{
+		if target.protect_from_melee() {
 			max_hit = (max_hit as f64 * 0.6).floor() as u64;
 		}
 		let max_hit = max_hit as u32;
@@ -276,39 +335,7 @@ impl MeleeDps {
 		.floor() as u32;
 
 		// --- Steps five & six: defence roll ------------------------------------
-		let (effective_defence, defence_roll) = match target {
-			Target::Player {
-				defence,
-				defence_boost,
-				defence_prayer,
-				attack_style,
-				defence_bonus,
-				..
-			} => {
-				let def_style_bonus = match attack_style {
-					AttackStyle::Defensive => 3,
-					AttackStyle::Controlled => 1,
-					_ => 0,
-				};
-				let eff = effective_level(
-					*defence,
-					*defence_boost,
-					defence_prayer.multiplier(),
-					def_style_bonus,
-					false,
-				);
-				(Some(eff), eff as u64 * (*defence_bonus as u64 + 64))
-			}
-			// NPC: (defence level + 9) * (defence bonus + 64)
-			Target::Npc {
-				defence,
-				defence_bonus,
-			} => (
-				None,
-				(u64::from(*defence) + 9) * (*defence_bonus as u64 + 64),
-			),
-		};
-		let defence_roll = defence_roll as u32;
+		let (effective_defence, defence_roll) = target.defence();
 
 		// --- Step seven: hit chance --------------------------------------------
 		let (a, d) = (attack_roll as f64, defence_roll as f64);
@@ -402,7 +429,7 @@ mod tests {
 			attack_speed: GameTicks(2),
 		};
 		// NPC with 50 def, 40 def bonus.
-		let target = Target::Npc {
+		let target = NpcTarget {
 			defence: 50,
 			defence_bonus: 40,
 		};
@@ -448,7 +475,7 @@ mod tests {
 			attack_speed: GameTicks(2),
 		};
 		// Player target: 99 def +15, piety (1.20), defensive style, 100 def bonus, PFM.
-		let target = Target::Player {
+		let target = PlayerTarget {
 			defence: 99,
 			defence_boost: 15,
 			defence_prayer: DefencePrayer::Piety,
@@ -486,7 +513,7 @@ mod tests {
 			gear_bonus: GearBonus::None,
 			attack_speed: GameTicks(2),
 		};
-		let target = Target::Npc {
+		let target = NpcTarget {
 			defence: 1,
 			defence_bonus: 0,
 		};

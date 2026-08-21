@@ -1,161 +1,92 @@
 use osrs_dps_calculator::{
 	AttackPrayer, AttackStyle, Attacker, GameTicks, GearBonus, MeleeDps, StrengthPrayer, Target,
 };
-use std::cmp::{Ordering, Reverse};
-use std::collections::BinaryHeap;
 
 /// Highest level we care about for attack and strength.
 const MAX_LEVEL: u32 = 99;
 
-fn level_exp(level: u8) -> u32 {
-	(1..level)
-		.map(|l| {
-			let l = l as f64;
-			(l + 300.0 * 2.0f64.powf(l / 7.0)) as u32
-		})
-		.sum::<u32>()
-		/ 4
-}
-
-/// Exp needed to raise a skill from `level` to `level + 1`.
-fn exp_to_gain(level: u32) -> u32 {
-	level_exp((level + 1) as u8) - level_exp(level as u8)
-}
-
-/// Flatten an (attack, strength) pair into a node index, and back.
-fn node_index(attack: u32, strength: u32) -> usize {
-	(attack - 1) as usize * (MAX_LEVEL as usize) + (strength - 1) as usize
-}
-
-fn node_coords(idx: usize) -> (u32, u32) {
-	let attack = idx as u32 / MAX_LEVEL + 1;
-	let strength = idx as u32 % MAX_LEVEL + 1;
-	(attack, strength)
+/// `t[l]` is the total experience needed to reach level `l` from level 1.
+fn level_exp_table() -> [u32; 100] {
+	let mut t = [0u32; 100];
+	let mut sum = 0u32;
+	for l in 1..=99 {
+		t[l] = sum / 4;
+		sum += (l as f64 + 300.0 * 2.0f64.powf(l as f64 / 7.0)) as u32;
+	}
+	t
 }
 
 /// DPS at a given (attack, strength), keeping the rest of the attacker
 /// setup and target fixed.
 fn dps_of(attacker: &Attacker, target: &Target, attack: u32, strength: u32) -> f64 {
-	let mut atk = attacker.clone();
+	let mut atk = *attacker;
 	atk.attack = attack;
 	atk.strength = strength;
 	MeleeDps::calculate(&atk, target).dps
 }
 
-/// Entry in the Dijkstra priority queue. Ordered so the smallest
-/// (distance, node) pops first.
-#[derive(Debug, Clone, Copy)]
-struct HeapItem {
-	dist: f64,
-	node: usize,
-}
-
-impl PartialEq for HeapItem {
-	fn eq(&self, other: &Self) -> bool {
-		self.dist.total_cmp(&other.dist) == Ordering::Equal && self.node == other.node
-	}
-}
-
-impl Eq for HeapItem {}
-
-impl PartialOrd for HeapItem {
-	fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-		Some(self.cmp(other))
-	}
-}
-
-impl Ord for HeapItem {
-	fn cmp(&self, other: &Self) -> Ordering {
-		self.dist
-			.total_cmp(&other.dist)
-			.then_with(|| self.node.cmp(&other.node))
-	}
-}
-
-/// Find the attack/strength leveling path from 1/1 to 99/99 that
+/// Find the attack/strength leveling path from 1/1 to max/max that
 /// minimizes the total time, where the time spent on each level-up is
 /// proportional to the exp needed for that level divided by the DPS at
 /// the state you're in while leveling it up.
 ///
-/// Returns the path (start to goal) and the cumulative time to reach
-/// each point on the path.
-fn solve(attacker: &Attacker, target: &Target) -> (Vec<(u32, u32)>, Vec<f64>) {
-	let n = (MAX_LEVEL * MAX_LEVEL) as usize;
-	let start = node_index(1, 1);
-	let goal = node_index(MAX_LEVEL, MAX_LEVEL);
+/// The leveling graph is a DAG (edges only increase attack or strength),
+/// so a topological-order DP finds the optimum exactly.
+///
+/// Returns the path (start to goal) with the cumulative time at each node.
+fn solve(attacker: &Attacker, target: &Target, max: u32) -> Vec<(u32, u32, f64)> {
+	let n = max as usize;
+	let idx = |a: u32, s: u32| (a - 1) as usize * n + (s - 1) as usize;
+	let level_exp = level_exp_table();
+	let exp_gain = |l: u32| (level_exp[(l + 1) as usize] - level_exp[l as usize]) as f64;
 
-	let mut dist = vec![f64::INFINITY; n];
-	let mut prev = vec![None; n];
-	dist[start] = 0.0;
+	let mut dist = vec![f64::INFINITY; n * n];
+	// How each node was reached: 0 = attack level-up, 1 = strength level-up.
+	let mut came = vec![0u8; n * n];
+	dist[idx(1, 1)] = 0.0;
 
-	let mut heap = BinaryHeap::new();
-	heap.push(Reverse(HeapItem {
-		dist: 0.0,
-		node: start,
-	}));
-
-	while let Some(Reverse(HeapItem { dist: d, node: cur })) = heap.pop() {
-		// Skip stale entries.
-		if d > dist[cur] {
-			continue;
-		}
-		if cur == goal {
-			break;
-		}
-		let (attack, strength) = node_coords(cur);
-		let current_dps = dps_of(attacker, target, attack, strength);
-
-		// Level up attack: (a, s) -> (a + 1, s).
-		if attack < MAX_LEVEL {
-			let cost = exp_to_gain(attack) as f64 / current_dps;
-			let next = node_index(attack + 1, strength);
-			let nd = d + cost;
-			if nd < dist[next] {
-				dist[next] = nd;
-				prev[next] = Some(cur);
-				heap.push(Reverse(HeapItem {
-					dist: nd,
-					node: next,
-				}));
+	for a in 1..=max {
+		for s in 1..=max {
+			let i = idx(a, s);
+			let d = dist[i];
+			let dps = dps_of(attacker, target, a, s);
+			if a < max {
+				let j = idx(a + 1, s);
+				let nd = d + exp_gain(a) / dps;
+				if nd < dist[j] {
+					dist[j] = nd;
+					came[j] = 0;
+				}
 			}
-		}
-		// Level up strength: (a, s) -> (a, s + 1).
-		if strength < MAX_LEVEL {
-			let cost = exp_to_gain(strength) as f64 / current_dps;
-			let next = node_index(attack, strength + 1);
-			let nd = d + cost;
-			if nd < dist[next] {
-				dist[next] = nd;
-				prev[next] = Some(cur);
-				heap.push(Reverse(HeapItem {
-					dist: nd,
-					node: next,
-				}));
+			if s < max {
+				let j = idx(a, s + 1);
+				let nd = d + exp_gain(s) / dps;
+				if nd < dist[j] {
+					dist[j] = nd;
+					came[j] = 1;
+				}
 			}
 		}
 	}
 
-	// Reconstruct the path from goal back to start.
-	let mut path = Vec::new();
-	let mut cur = goal;
+	// Reconstruct the path from goal back to start. Its length is known:
+	// 2 * (max - 1) level-ups plus the start node.
+	let mut path = Vec::with_capacity(2 * (n - 1) + 1);
+	let (mut a, mut s) = (max, max);
 	loop {
-		path.push(node_coords(cur));
-		if cur == start {
+		let i = idx(a, s);
+		path.push((a, s, dist[i]));
+		if (a, s) == (1, 1) {
 			break;
 		}
-		cur = match prev[cur] {
-			Some(p) => p,
-			None => break,
-		};
+		if came[i] == 0 {
+			a -= 1;
+		} else {
+			s -= 1;
+		}
 	}
 	path.reverse();
-
-	let times: Vec<f64> = path
-		.iter()
-		.map(|&(a, s)| dist[node_index(a, s)])
-		.collect();
-
-	(path, times)
+	path
 }
 
 fn base_attacker() -> Attacker {
@@ -189,17 +120,13 @@ fn main() {
 	let attacker = base_attacker();
 	let target = test_target();
 
-	let (path, times) = solve(&attacker, &target);
+	let path = solve(&attacker, &target, MAX_LEVEL);
 
 	println!("Optimal leveling path 1/1 -> 99/99 (minimizes sum of exp / dps):");
-	for i in 0..path.len() {
-		let (attack, strength) = path[i];
-		let step = if i == 0 {
-			0.0
-		} else {
-			times[i] - times[i - 1]
-		};
-		let total = times[i];
+	let mut prev = 0.0;
+	for &(attack, strength, total) in &path {
+		let step = total - prev;
+		prev = total;
 		let dps = dps_of(&attacker, &target, attack, strength);
 		println!(
 			"att={attack:02} str={strength:02}  step={step:>12.4}  total={total:>12.4}  dps={dps:.4}"
@@ -207,7 +134,7 @@ fn main() {
 	}
 	println!(
 		"Total time: {:.4}",
-		*times.last().expect("path is non-empty")
+		path.last().expect("path is non-empty").2
 	);
 }
 
@@ -215,46 +142,73 @@ fn main() {
 mod tests {
 	use super::*;
 
-	/// The leveling graph is a DAG (edges only increase attack/strength), so
-	/// the optimum can also be found by a topological-order DP. Use that as
-	/// an independent check of the Dijkstra implementation.
+	/// Exhaustive check of the optimum over every monotone path on a small
+	/// grid, as an independent verification of `solve`'s DP.
 	#[test]
-	fn dijkstra_matches_dp() {
+	fn solve_matches_brute_force() {
+		const MAX: u32 = 6;
 		let attacker = base_attacker();
 		let target = test_target();
 
-		let (path, times) = solve(&attacker, &target);
+		let path = solve(&attacker, &target, MAX);
+		let total = path.last().expect("path is non-empty").2;
 
-		let mut dp = vec![vec![f64::INFINITY; MAX_LEVEL as usize + 1]; MAX_LEVEL as usize + 1];
-		dp[1][1] = 0.0;
-		for a in 1..=MAX_LEVEL {
-			for s in 1..=MAX_LEVEL {
-				let d = dp[a as usize][s as usize];
-				if d.is_infinite() {
-					continue;
-				}
-				let cost = |level: u32| exp_to_gain(level) as f64 / dps_of(&attacker, &target, a, s);
-				if a < MAX_LEVEL {
-					dp[(a + 1) as usize][s as usize] =
-						dp[(a + 1) as usize][s as usize].min(d + cost(a));
-				}
-				if s < MAX_LEVEL {
-					dp[a as usize][(s + 1) as usize] =
-						dp[a as usize][(s + 1) as usize].min(d + cost(s));
-				}
+		fn rec(
+			a: u32,
+			s: u32,
+			max: u32,
+			acc: f64,
+			level_exp: &[u32; 100],
+			attacker: &Attacker,
+			target: &Target,
+			best: &mut f64,
+		) {
+			if (a, s) == (max, max) {
+				*best = best.min(acc);
+				return;
+			}
+			let dps = dps_of(attacker, target, a, s);
+			let cost = |l: u32| (level_exp[(l + 1) as usize] - level_exp[l as usize]) as f64 / dps;
+			if a < max {
+				rec(
+					a + 1,
+					s,
+					max,
+					acc + cost(a),
+					level_exp,
+					attacker,
+					target,
+					best,
+				);
+			}
+			if s < max {
+				rec(
+					a,
+					s + 1,
+					max,
+					acc + cost(s),
+					level_exp,
+					attacker,
+					target,
+					best,
+				);
 			}
 		}
-		assert!((dp[MAX_LEVEL as usize][MAX_LEVEL as usize] - times[times.len() - 1]).abs() < 1e-6);
+		let level_exp = level_exp_table();
+		let mut best = f64::INFINITY;
+		rec(1, 1, MAX, 0.0, &level_exp, &attacker, &target, &mut best);
+		assert!((total - best).abs() < 1e-9);
 
 		// The path must be monotone: each step raises exactly one skill by one.
-		for i in 1..path.len() {
-			let (pa, ps) = path[i - 1];
-			let (ca, cs) = path[i];
-			let da = (ca as i32 - pa as i32).abs();
-			let ds = (cs as i32 - ps as i32).abs();
-			assert!(da + ds == 1, "step from {:?} to {:?} is not a single level-up", path[i - 1], path[i]);
+		for w in path.windows(2) {
+			let (pa, ps) = (w[0].0, w[0].1);
+			let (ca, cs) = (w[1].0, w[1].1);
+			assert!(
+				(ca != pa) as usize + (cs != ps) as usize == 1 && ca >= pa && cs >= ps,
+				"step from ({pa}, {ps}) to ({ca}, {cs}) is not a single level-up"
+			);
 		}
-		assert_eq!(path[0], (1, 1));
-		assert_eq!(path[path.len() - 1], (MAX_LEVEL, MAX_LEVEL));
+		assert_eq!(path.first().expect("path is non-empty"), &(1, 1, 0.0));
+		assert_eq!((path.last().unwrap().0, path.last().unwrap().1), (MAX, MAX));
 	}
 }

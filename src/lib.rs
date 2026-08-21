@@ -135,7 +135,7 @@ impl DefencePrayer {
 }
 
 /// A number of game ticks. One tick is exactly 0.6 seconds.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GameTicks(pub u32);
 
 impl GameTicks {
@@ -149,7 +149,7 @@ impl GameTicks {
 }
 
 /// The player doing the attacking.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct Attacker {
 	pub strength: u32,
 	pub attack: u32,
@@ -203,7 +203,7 @@ pub enum Target {
 }
 
 /// All intermediate values and the final DPS.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug)]
 pub struct MeleeDps {
 	pub effective_strength: u32,
 	pub max_hit: u32,

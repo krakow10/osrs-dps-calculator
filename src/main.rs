@@ -92,7 +92,10 @@ fn solve<T: Target>(attacker: &Attacker, target: &T, max: u32) -> Vec<Step> {
 	let idx = |a: u32, s: u32| (a - 1) as usize * n + (s - 1) as usize;
 	let level_exp = level_exp_table();
 	let exp_gain = |l: u32| (level_exp[(l + 1) as usize] - level_exp[l as usize]) as f64;
-	let levels = |a: u32, s: u32| Levels { attack: a, strength: s };
+	let levels = |a: u32, s: u32| Levels {
+		attack: a,
+		strength: s,
+	};
 
 	let mut dist = vec![f64::INFINITY; n * n];
 	// The skill leveled up to reach each node.
@@ -112,7 +115,8 @@ fn solve<T: Target>(attacker: &Attacker, target: &T, max: u32) -> Vec<Step> {
 					continue;
 				}
 				let j = idx(attack, strength);
-				let nd = d + exp_gain(level) / dps_of(attacker, target, levels(a, s), skill.style());
+				let nd =
+					d + exp_gain(level) / dps_of(attacker, target, levels(a, s), skill.style());
 				if nd < dist[j] {
 					dist[j] = nd;
 					came[j] = skill;
@@ -154,10 +158,17 @@ fn print_path<T: Target>(attacker: &Attacker, target: &T, path: &[Step]) {
 		// The step was taken from the state before leveling its skill, which
 		// is where the style's DPS was measured.
 		let prev = match step.skill {
-			Skill::Attack => Levels { attack: step.levels.attack - 1, ..step.levels },
-			Skill::Strength => Levels { strength: step.levels.strength - 1, ..step.levels },
+			Skill::Attack => Levels {
+				attack: step.levels.attack - 1,
+				..step.levels
+			},
+			Skill::Strength => Levels {
+				strength: step.levels.strength - 1,
+				..step.levels
+			},
 		};
 		let dps = dps_of(attacker, target, prev, step.skill.style());
+
 		println!(
 			"att={:02} str={:02}  step={:>12.4}  total={:>12.4}  {:>10} dps={:.4}",
 			step.levels.attack,
@@ -237,17 +248,38 @@ mod tests {
 				*best = best.min(acc);
 				return;
 			}
-			let levels = Levels { attack: a, strength: s };
+			let levels = Levels {
+				attack: a,
+				strength: s,
+			};
 			let exp_gain = |l: u32| (level_exp[(l + 1) as usize] - level_exp[l as usize]) as f64;
 			// Mirror `solve`: attack level-ups are priced at the accurate style,
 			// strength level-ups at the aggressive style.
 			if a < max {
 				let dps = dps_of(attacker, target, levels, Skill::Attack.style());
-				rec(a + 1, s, max, acc + exp_gain(a) / dps, level_exp, attacker, target, best);
+				rec(
+					a + 1,
+					s,
+					max,
+					acc + exp_gain(a) / dps,
+					level_exp,
+					attacker,
+					target,
+					best,
+				);
 			}
 			if s < max {
 				let dps = dps_of(attacker, target, levels, Skill::Strength.style());
-				rec(a, s + 1, max, acc + exp_gain(s) / dps, level_exp, attacker, target, best);
+				rec(
+					a,
+					s + 1,
+					max,
+					acc + exp_gain(s) / dps,
+					level_exp,
+					attacker,
+					target,
+					best,
+				);
 			}
 		}
 		let level_exp = level_exp_table();
@@ -258,7 +290,10 @@ mod tests {
 		// Each step raises exactly one skill by one, `total` is the running
 		// sum of `time` from the 1/1 start, and the path ends at MAX/MAX.
 		let mut running = 0.0;
-		let mut prev = Levels { attack: 1, strength: 1 };
+		let mut prev = Levels {
+			attack: 1,
+			strength: 1,
+		};
 		for step in &path {
 			let da = step.levels.attack as i32 - prev.attack as i32;
 			let ds = step.levels.strength as i32 - prev.strength as i32;
@@ -274,6 +309,12 @@ mod tests {
 			running = step.total;
 			prev = step.levels;
 		}
-		assert_eq!(prev, Levels { attack: MAX, strength: MAX });
+		assert_eq!(
+			prev,
+			Levels {
+				attack: MAX,
+				strength: MAX
+			}
+		);
 	}
 }

@@ -187,7 +187,7 @@ fn base_attacker() -> Attacker {
 		attack_prayer: AttackPrayer::None,
 		weapon: RUNE_SCIMITAR,
 		attack_style: AttackStyle::Aggressive,
-		void: true,
+		void: false,
 		gear_bonus: GearBonus::None,
 	}
 }

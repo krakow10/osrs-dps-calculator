@@ -176,6 +176,56 @@ impl WeaponStats {
 	}
 }
 
+/// Iron scimitar.
+/// <https://oldschool.runescape.wiki/w/Scimitar>
+pub const IRON_SCIMITAR: WeaponStats = WeaponStats {
+	stab: 2,
+	slash: 10,
+	crush: -2,
+	strength: 9,
+	attack_speed: GameTicks(4),
+};
+
+/// Steel scimitar.
+/// <https://oldschool.runescape.wiki/w/Scimitar>
+pub const STEEL_SCIMITAR: WeaponStats = WeaponStats {
+	stab: 3,
+	slash: 15,
+	crush: -2,
+	strength: 14,
+	attack_speed: GameTicks(4),
+};
+
+/// Black scimitar.
+/// <https://oldschool.runescape.wiki/w/Scimitar>
+pub const BLACK_SCIMITAR: WeaponStats = WeaponStats {
+	stab: 4,
+	slash: 19,
+	crush: -2,
+	strength: 14,
+	attack_speed: GameTicks(4),
+};
+
+/// Mithril scimitar.
+/// <https://oldschool.runescape.wiki/w/Scimitar>
+pub const MITHRIL_SCIMITAR: WeaponStats = WeaponStats {
+	stab: 5,
+	slash: 21,
+	crush: -2,
+	strength: 20,
+	attack_speed: GameTicks(4),
+};
+
+/// Adamant scimitar.
+/// <https://oldschool.runescape.wiki/w/Scimitar>
+pub const ADAMANT_SCIMITAR: WeaponStats = WeaponStats {
+	stab: 6,
+	slash: 29,
+	crush: -2,
+	strength: 28,
+	attack_speed: GameTicks(4),
+};
+
 /// Rune scimitar.
 /// <https://oldschool.runescape.wiki/w/Rune_scimitar>
 pub const RUNE_SCIMITAR: WeaponStats = WeaponStats {
@@ -215,6 +265,23 @@ pub const BLADE_OF_SAELDOR: WeaponStats = WeaponStats {
 	strength: 93,
 	attack_speed: GameTicks(4),
 };
+
+/// The weapons the attacker progresses through, weakest to strongest, each
+/// paired with the minimum attack level required to wield it.
+///
+/// The scimitars can be wielded at any level; the abyssal whip requires 70
+/// attack and the blade of Saeldor 80.
+pub const WEAPONS: &[(WeaponStats, u32)] = &[
+	(IRON_SCIMITAR, 1),
+	(STEEL_SCIMITAR, 5),
+	(BLACK_SCIMITAR, 10),
+	(MITHRIL_SCIMITAR, 20),
+	(ADAMANT_SCIMITAR, 30),
+	(RUNE_SCIMITAR, 40),
+	(DRAGON_SCIMITAR, 60),
+	(ABYSSAL_WHIP, 70),
+	(BLADE_OF_SAELDOR, 80),
+];
 
 /// The player doing the attacking.
 #[derive(Debug, Clone, Copy)]
@@ -368,8 +435,7 @@ impl MeleeDps {
 
 		// --- Step two: max hit ------------------------------------------------
 		// eff_strength * (str bonus + 64) + 320, / 640, floor, then gear bonus, floor.
-		let max_hit_base = ((effective_strength as f64
-			* (attacker.weapon.strength as f64 + 64.0)
+		let max_hit_base = ((effective_strength as f64 * (attacker.weapon.strength as f64 + 64.0)
 			+ 320.0) / 640.0)
 			.floor() as u64;
 		let mut max_hit = (max_hit_base as f64 * gear.multiplier()).floor() as u64;

@@ -1,6 +1,6 @@
 use osrs_dps_calculator::{
-	ABYSSAL_WHIP, AttackPrayer, AttackStyle, Attacker, BLADE_OF_SAELDOR, DRAGON_SCIMITAR,
-	GearBonus, MeleeDps, NpcTarget, RUNE_SCIMITAR, StrengthPrayer, Target, WeaponStats,
+	AttackPrayer, AttackStyle, Attacker, GearBonus, MeleeDps, NpcTarget, RUNE_SCIMITAR,
+	StrengthPrayer, Target, WEAPONS, WeaponStats,
 };
 
 /// Highest level we care about for attack and strength.
@@ -50,18 +50,6 @@ struct Step {
 	time: f64,
 	total: f64,
 }
-
-/// The weapons the attacker progresses through, weakest to strongest, each
-/// paired with the minimum attack level required to wield it.
-///
-/// The scimitars can be wielded at any level; the abyssal whip requires 70
-/// attack and the blade of Saeldor 80.
-const WEAPONS: &[(WeaponStats, u32)] = &[
-	(RUNE_SCIMITAR, 1),
-	(DRAGON_SCIMITAR, 60),
-	(ABYSSAL_WHIP, 70),
-	(BLADE_OF_SAELDOR, 80),
-];
 
 /// The strongest weapon in `WEAPONS` that can be wielded at the given
 /// attack level, so the weapon switches out as the attacker levels up
@@ -349,6 +337,7 @@ mod tests {
 	/// weapon's required attack level.
 	#[test]
 	fn weapon_switches_at_required_attack_level() {
+		use osrs_dps_calculator::{ABYSSAL_WHIP, BLADE_OF_SAELDOR, DRAGON_SCIMITAR};
 		// Strongest weapon with no level requirement, until 70 attack.
 		assert_eq!(weapon_for_attack(1), DRAGON_SCIMITAR);
 		assert_eq!(weapon_for_attack(69), DRAGON_SCIMITAR);

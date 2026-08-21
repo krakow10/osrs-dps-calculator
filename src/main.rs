@@ -1,6 +1,6 @@
 use osrs_dps_calculator::{
-	AttackPrayer, AttackStyle, Attacker, GearBonus, MeleeDps, NpcTarget, RUNE_SCIMITAR,
-	StrengthPrayer, Target,
+	ABYSSAL_WHIP, AttackPrayer, AttackStyle, Attacker, BLADE_OF_SAELDOR, DRAGON_SCIMITAR,
+	GearBonus, MeleeDps, NpcTarget, RUNE_SCIMITAR, StrengthPrayer, Target, WeaponStats,
 };
 
 /// Highest level we care about for attack and strength.
@@ -51,6 +51,30 @@ struct Step {
 	total: f64,
 }
 
+/// The weapons the attacker progresses through, weakest to strongest, each
+/// paired with the minimum attack level required to wield it.
+///
+/// The scimitars can be wielded at any level; the abyssal whip requires 70
+/// attack and the blade of Saeldor 80.
+const WEAPONS: &[(WeaponStats, u32)] = &[
+	(RUNE_SCIMITAR, 1),
+	(DRAGON_SCIMITAR, 60),
+	(ABYSSAL_WHIP, 70),
+	(BLADE_OF_SAELDOR, 80),
+];
+
+/// The strongest weapon in `WEAPONS` that can be wielded at the given
+/// attack level, so the weapon switches out as the attacker levels up
+/// attack and reaches each weapon's requirement.
+fn weapon_for_attack(attack: u32) -> WeaponStats {
+	WEAPONS
+		.iter()
+		.rev()
+		.find(|(_, min_attack)| attack >= *min_attack)
+		.map(|(stats, _)| *stats)
+		.expect("WEAPONS always contains a weapon with no level requirement")
+}
+
 /// `t[l]` is the total experience needed to reach level `l` from level 1.
 fn level_exp_table() -> [u32; 100] {
 	let mut t = [0u32; 100];
@@ -63,11 +87,14 @@ fn level_exp_table() -> [u32; 100] {
 }
 
 /// DPS at the given levels and attack style, keeping the rest of the
-/// attacker setup and target fixed.
+/// attacker setup and target fixed. The wielded weapon is whatever the
+/// attacker can use at that attack level, so it switches out as each
+/// weapon's requirement is reached.
 fn dps_of<T: Target>(attacker: &Attacker, target: &T, levels: Levels, style: AttackStyle) -> f64 {
 	let atk = Attacker {
 		attack: levels.attack,
 		strength: levels.strength,
+		weapon: weapon_for_attack(levels.attack),
 		attack_style: style,
 		..*attacker
 	};
@@ -316,5 +343,20 @@ mod tests {
 				strength: MAX
 			}
 		);
+	}
+
+	/// The weapon switches out exactly when the attacker reaches each
+	/// weapon's required attack level.
+	#[test]
+	fn weapon_switches_at_required_attack_level() {
+		// Strongest weapon with no level requirement, until 70 attack.
+		assert_eq!(weapon_for_attack(1), DRAGON_SCIMITAR);
+		assert_eq!(weapon_for_attack(69), DRAGON_SCIMITAR);
+		// Abyssal whip at 70, until 80 attack.
+		assert_eq!(weapon_for_attack(70), ABYSSAL_WHIP);
+		assert_eq!(weapon_for_attack(79), ABYSSAL_WHIP);
+		// Blade of Saeldor at 80.
+		assert_eq!(weapon_for_attack(80), BLADE_OF_SAELDOR);
+		assert_eq!(weapon_for_attack(99), BLADE_OF_SAELDOR);
 	}
 }

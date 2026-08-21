@@ -40,15 +40,49 @@ struct Levels {
 	strength: u32,
 }
 
-/// One level-up on the optimal path: the levels after the level-up, which
-/// skill was leveled up, the time that took, and the cumulative time from
-/// the start.
-#[derive(Clone, Copy, Debug)]
-struct Step {
-	levels: Levels,
-	skill: Skill,
-	time: f64,
-	total: f64,
+/// The solved leveling grid: the minimum total time to reach each
+/// (attack, strength) node from 1/1, and, for every node, the skill that
+/// was leveled up to reach it.
+struct Grid {
+	max: u32,
+	/// `dist[idx(a, s)]` is the minimum total time to reach node (a, s).
+	dist: Vec<f64>,
+	/// The skill leveled up to reach each node.
+	came: Vec<Skill>,
+}
+
+impl Grid {
+	/// An unsolved grid: every node unreachable except the 1/1 start, which
+	/// costs nothing.
+	fn new(max: u32) -> Self {
+		let n = max as usize;
+		let mut dist = vec![f64::INFINITY; n * n];
+		let came = vec![Skill::Attack; n * n];
+		dist[0] = 0.0;
+		Grid { max, dist, came }
+	}
+
+	/// The flat index of the (attack, strength) node.
+	fn idx(&self, attack: u32, strength: u32) -> usize {
+		let n = self.max as usize;
+		(attack - 1) as usize * n + (strength - 1) as usize
+	}
+
+	/// The optimal sequence of skill level-ups from 1/1 to max/max, in order.
+	fn path(&self) -> Vec<Skill> {
+		let mut path = Vec::with_capacity(2 * (self.max as usize - 1));
+		let (mut a, mut s) = (self.max, self.max);
+		while (a, s) != (1, 1) {
+			let skill = self.came[self.idx(a, s)];
+			(a, s) = match skill {
+				Skill::Attack => (a - 1, s),
+				Skill::Strength => (a, s - 1),
+			};
+			path.push(skill);
+		}
+		path.reverse();
+		path
+	}
 }
 
 /// The strongest weapon in `WEAPONS` that can be wielded at the given
@@ -101,26 +135,21 @@ fn dps_of<T: Target>(attacker: &Attacker, target: &T, levels: Levels, style: Att
 /// The leveling graph is a DAG (edges only increase attack or strength),
 /// so a topological-order DP finds the optimum exactly.
 ///
-/// Returns the level-ups from start to goal, in order.
-fn solve<T: Target>(attacker: &Attacker, target: &T, max: u32) -> Vec<Step> {
-	let n = max as usize;
-	let idx = |a: u32, s: u32| (a - 1) as usize * n + (s - 1) as usize;
+/// Returns the solved grid; `Grid::path` yields the optimal level-ups in
+/// order.
+fn solve<T: Target>(attacker: &Attacker, target: &T, max: u32) -> Grid {
 	let level_exp = level_exp_table();
 	let exp_gain = |l: u32| (level_exp[(l + 1) as usize] - level_exp[l as usize]) as f64;
 	let levels = |a: u32, s: u32| Levels {
 		attack: a,
 		strength: s,
 	};
-
-	let mut dist = vec![f64::INFINITY; n * n];
-	// The skill leveled up to reach each node.
-	let mut came = vec![Skill::Attack; n * n];
-	dist[idx(1, 1)] = 0.0;
+	let mut grid = Grid::new(max);
 
 	for a in 1..=max {
 		for s in 1..=max {
-			let i = idx(a, s);
-			let d = dist[i];
+			let i = grid.idx(a, s);
+			let d = grid.dist[i];
 			for skill in [Skill::Attack, Skill::Strength] {
 				let (attack, strength, level) = match skill {
 					Skill::Attack => (a + 1, s, a),
@@ -129,75 +158,59 @@ fn solve<T: Target>(attacker: &Attacker, target: &T, max: u32) -> Vec<Step> {
 				if attack > max || strength > max {
 					continue;
 				}
-				let j = idx(attack, strength);
+				let j = grid.idx(attack, strength);
 				let nd =
 					d + exp_gain(level) / dps_of(attacker, target, levels(a, s), skill.style());
-				if nd < dist[j] {
-					dist[j] = nd;
-					came[j] = skill;
+				if nd < grid.dist[j] {
+					grid.dist[j] = nd;
+					grid.came[j] = skill;
 				}
 			}
 		}
 	}
 
-	// Reconstruct the path by walking back from the goal.
-	let mut path = Vec::with_capacity(2 * (n - 1));
-	let (mut a, mut s) = (max, max);
-	while (a, s) != (1, 1) {
-		let i = idx(a, s);
-		let skill = came[i];
-		let prev = match skill {
-			Skill::Attack => idx(a - 1, s),
-			Skill::Strength => idx(a, s - 1),
-		};
-		path.push(Step {
-			levels: levels(a, s),
-			skill,
-			time: dist[i] - dist[prev],
-			total: dist[i],
-		});
-		(a, s) = match skill {
-			Skill::Attack => (a - 1, s),
-			Skill::Strength => (a, s - 1),
-		};
-	}
-	path.reverse();
-	path
+	grid
 }
 
 /// Print the path one line per level-up, showing the step time, the
-/// cumulative time, and the style (and DPS) the step was priced at.
-fn print_path<T: Target>(attacker: &Attacker, target: &T, path: &[Step]) {
+/// cumulative time, and the style (and DPS) the step was priced at. The
+/// per-step values are derived on the fly from the grid.
+fn print_path<T: Target>(attacker: &Attacker, target: &T, grid: &Grid) {
 	println!("Optimal leveling path 1/1 -> {MAX_LEVEL}/{MAX_LEVEL} (minimizes sum of exp / dps):");
-	for step in path {
+	let mut a = 1u32;
+	let mut s = 1u32;
+	let mut total = 0.0f64;
+	for skill in grid.path() {
 		// The step was taken from the state before leveling its skill, which
 		// is where the style's DPS was measured.
-		let prev = match step.skill {
-			Skill::Attack => Levels {
-				attack: step.levels.attack - 1,
-				..step.levels
-			},
-			Skill::Strength => Levels {
-				strength: step.levels.strength - 1,
-				..step.levels
-			},
+		let prev = Levels {
+			attack: a,
+			strength: s,
 		};
-		let dps = dps_of(attacker, target, prev, step.skill.style());
+		(a, s) = match skill {
+			Skill::Attack => (a + 1, s),
+			Skill::Strength => (a, s + 1),
+		};
+		let i = grid.idx(a, s);
+		let prev_i = match skill {
+			Skill::Attack => grid.idx(a - 1, s),
+			Skill::Strength => grid.idx(a, s - 1),
+		};
+		let time = grid.dist[i] - grid.dist[prev_i];
+		total = grid.dist[i];
+		let dps = dps_of(attacker, target, prev, skill.style());
 
 		println!(
 			"att={:02} str={:02}  step={:>12.4}  total={:>12.4}  {:>10} dps={:.4}",
-			step.levels.attack,
-			step.levels.strength,
-			step.time,
-			step.total,
-			step.skill.style_name(),
+			a,
+			s,
+			time,
+			total,
+			skill.style_name(),
 			dps
 		);
 	}
-	println!(
-		"Total time: {:.4}",
-		path.last().expect("path is non-empty").total
-	);
+	println!("Total time: {:.4}", total);
 }
 
 fn base_attacker() -> Attacker {
@@ -230,8 +243,8 @@ fn main() {
 	let attacker = base_attacker();
 	let target = test_target();
 
-	let path = solve(&attacker, &target, MAX_LEVEL);
-	print_path(&attacker, &target, &path);
+	let grid = solve(&attacker, &target, MAX_LEVEL);
+	print_path(&attacker, &target, &grid);
 }
 
 #[cfg(test)]
@@ -246,8 +259,8 @@ mod tests {
 		let attacker = base_attacker();
 		let target = test_target();
 
-		let path = solve(&attacker, &target, MAX);
-		let total = path.last().expect("path is non-empty").total;
+		let grid = solve(&attacker, &target, MAX);
+		let total = grid.dist[grid.idx(MAX, MAX)];
 
 		fn rec<T: Target>(
 			a: u32,
@@ -305,32 +318,24 @@ mod tests {
 		// Each step raises exactly one skill by one, `total` is the running
 		// sum of `time` from the 1/1 start, and the path ends at MAX/MAX.
 		let mut running = 0.0;
-		let mut prev = Levels {
-			attack: 1,
-			strength: 1,
-		};
-		for step in &path {
-			let da = step.levels.attack as i32 - prev.attack as i32;
-			let ds = step.levels.strength as i32 - prev.strength as i32;
-			assert!(
-				(da, ds) == (1, 0) || (da, ds) == (0, 1),
-				"step from ({}, {}) to ({}, {}) is not a single level-up",
-				prev.attack,
-				prev.strength,
-				step.levels.attack,
-				step.levels.strength
-			);
-			assert!((step.total - running - step.time).abs() < 1e-9);
-			running = step.total;
-			prev = step.levels;
+		let mut a = 1u32;
+		let mut s = 1u32;
+		for skill in grid.path() {
+			(a, s) = match skill {
+				Skill::Attack => (a + 1, s),
+				Skill::Strength => (a, s + 1),
+			};
+			let i = grid.idx(a, s);
+			let prev_i = match skill {
+				Skill::Attack => grid.idx(a - 1, s),
+				Skill::Strength => grid.idx(a, s - 1),
+			};
+			let step_total = grid.dist[i];
+			let step_time = grid.dist[i] - grid.dist[prev_i];
+			assert!((step_total - running - step_time).abs() < 1e-9);
+			running = step_total;
 		}
-		assert_eq!(
-			prev,
-			Levels {
-				attack: MAX,
-				strength: MAX
-			}
-		);
+		assert_eq!((a, s), (MAX, MAX));
 	}
 
 	/// The weapon switches out exactly when the attacker reaches each

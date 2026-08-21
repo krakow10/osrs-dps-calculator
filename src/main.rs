@@ -104,6 +104,46 @@ fn solve<T: Target>(attacker: &Attacker, target: &T, max: u32) -> Vec<(u32, u32,
 	path
 }
 
+/// Print the leveling path, one line per node, showing the time spent on the
+/// step into the node, the cumulative time, and the style the step was
+/// priced at.
+fn print_path<T: Target>(attacker: &Attacker, target: &T, path: &[(u32, u32, f64)]) {
+	println!("Optimal leveling path 1/1 -> 99/99 (minimizes sum of exp / dps):");
+	for (i, &(attack, strength, total)) in path.iter().enumerate() {
+		// The step into this node was taken from the previous state, using
+		// the style that trains the skill that was leveled up (accurate for
+		// attack, aggressive for strength). That is the DPS the step was
+		// priced at.
+		let (prev_attack, prev_strength, prev_total) =
+			if i == 0 { (1, 1, 0.0) } else { path[i - 1] };
+		let step = total - prev_total;
+		let style = if attack != prev_attack {
+			AttackStyle::Accurate
+		} else {
+			AttackStyle::Aggressive
+		};
+		let dps = dps_of(attacker, target, prev_attack, prev_strength, style);
+		println!(
+			"att={attack:02} str={strength:02}  step={step:>12.4}  total={total:>12.4}  {:>10} dps={dps:.4}",
+			style_name(style)
+		);
+	}
+	println!(
+		"Total time: {:.4}",
+		path.last().expect("path is non-empty").2
+	);
+}
+
+/// Display name for the styles used while leveling; `solve` only ever
+/// produces those two.
+fn style_name(style: AttackStyle) -> &'static str {
+	match style {
+		AttackStyle::Accurate => "accurate",
+		AttackStyle::Aggressive => "aggressive",
+		_ => unreachable!("leveling only uses the accurate or aggressive style"),
+	}
+}
+
 fn base_attacker() -> Attacker {
 	// High-level melee setup: 99/99, full melee void, 44 str / 45 atk
 	// equipment bonus, 4-tick (2.4s) attack speed. The aggressive style is
@@ -135,34 +175,7 @@ fn main() {
 	let target = test_target();
 
 	let path = solve(&attacker, &target, MAX_LEVEL);
-
-	println!("Optimal leveling path 1/1 -> 99/99 (minimizes sum of exp / dps):");
-	for (i, &(attack, strength, total)) in path.iter().enumerate() {
-		// The step into this node was taken from the previous state, using the
-		// style that trains the skill that was leveled up (accurate for attack,
-		// aggressive for strength). That is the DPS the step was priced at.
-		let (prev_attack, prev_strength, prev_total): (u32, u32, f64) =
-			if i == 0 { (1, 1, 0.0) } else { path[i - 1] };
-		let step = total - prev_total;
-		let style = if attack != prev_attack {
-			AttackStyle::Accurate
-		} else {
-			AttackStyle::Aggressive
-		};
-		let dps = dps_of(&attacker, &target, prev_attack, prev_strength, style);
-		let style_name = match style {
-			AttackStyle::Accurate => "accurate",
-			AttackStyle::Aggressive => "aggressive",
-			_ => unreachable!("leveling only uses the accurate or aggressive style"),
-		};
-		println!(
-			"att={attack:02} str={strength:02}  step={step:>12.4}  total={total:>12.4}  {style_name:>10} dps={dps:.4}"
-		);
-	}
-	println!(
-		"Total time: {:.4}",
-		path.last().expect("path is non-empty").2
-	);
+	print_path(&attacker, &target, &path);
 }
 
 #[cfg(test)]

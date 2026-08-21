@@ -342,9 +342,30 @@ mod tests {
 	/// weapon's required attack level.
 	#[test]
 	fn weapon_switches_at_required_attack_level() {
-		use osrs_dps_calculator::{ABYSSAL_WHIP, BLADE_OF_SAELDOR, DRAGON_SCIMITAR};
-		// Strongest weapon with no level requirement, until 70 attack.
-		assert_eq!(weapon_for_attack(1), DRAGON_SCIMITAR);
+		use osrs_dps_calculator::{
+			ABYSSAL_WHIP, ADAMANT_SCIMITAR, BLACK_SCIMITAR, BLADE_OF_SAELDOR, DRAGON_SCIMITAR,
+			IRON_SCIMITAR, MITHRIL_SCIMITAR, RUNE_SCIMITAR, STEEL_SCIMITAR,
+		};
+		// Iron scimitar at 1, until 5 attack.
+		assert_eq!(weapon_for_attack(1), IRON_SCIMITAR);
+		assert_eq!(weapon_for_attack(4), IRON_SCIMITAR);
+		// Steel scimitar at 5, until 10 attack.
+		assert_eq!(weapon_for_attack(5), STEEL_SCIMITAR);
+		assert_eq!(weapon_for_attack(9), STEEL_SCIMITAR);
+		// Black scimitar at 10, until 20 attack.
+		assert_eq!(weapon_for_attack(10), BLACK_SCIMITAR);
+		assert_eq!(weapon_for_attack(19), BLACK_SCIMITAR);
+		// Mithril scimitar at 20, until 30 attack.
+		assert_eq!(weapon_for_attack(20), MITHRIL_SCIMITAR);
+		assert_eq!(weapon_for_attack(29), MITHRIL_SCIMITAR);
+		// Adamant scimitar at 30, until 40 attack.
+		assert_eq!(weapon_for_attack(30), ADAMANT_SCIMITAR);
+		assert_eq!(weapon_for_attack(39), ADAMANT_SCIMITAR);
+		// Rune scimitar at 40, until 60 attack.
+		assert_eq!(weapon_for_attack(40), RUNE_SCIMITAR);
+		assert_eq!(weapon_for_attack(59), RUNE_SCIMITAR);
+		// Dragon scimitar at 60, until 70 attack.
+		assert_eq!(weapon_for_attack(60), DRAGON_SCIMITAR);
 		assert_eq!(weapon_for_attack(69), DRAGON_SCIMITAR);
 		// Abyssal whip at 70, until 80 attack.
 		assert_eq!(weapon_for_attack(70), ABYSSAL_WHIP);

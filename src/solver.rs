@@ -90,8 +90,6 @@ impl<const MAX: usize> Solver<MAX> {
 	/// The leveling graph is a DAG (edges only increase attack or
 	/// strength), so a topological-order DP finds the optimum exactly.
 	pub fn new<T: Target, F: Fn(Levels, AttackStyle) -> Attacker>(attacker: F, target: &T) -> Self {
-		let level_exp = level_exp_table();
-		let exp_gain = |l: usize| (level_exp[l + 1] - level_exp[l]) as f64;
 		let levels = |a: usize, s: usize| Levels {
 			attack: a as u8,
 			strength: s as u8,
@@ -117,7 +115,7 @@ impl<const MAX: usize> Solver<MAX> {
 						continue;
 					}
 					let dps = dps_of(&attacker, target, levels(a, s), skill.style());
-					let nd = d + exp_gain(level) / dps;
+					let nd = d + LEVEL_EXP_TABLE[level] as f64 / dps;
 					let dest = &mut solver.points[attack - 1][strength - 1];
 					if nd < dest.dist {
 						dest.dist = nd;
@@ -180,16 +178,17 @@ impl<'a, const MAX: usize> Iterator for GridPointIter<'a, MAX> {
 	}
 }
 
-/// `t[l]` is the total experience needed to reach level `l` from level 1.
-fn level_exp_table() -> [u32; 100] {
-	let mut t = [0u32; 100];
-	let mut sum = 0u32;
-	for l in 1..=99 {
-		t[l] = sum / 4;
-		sum += (l as f64 + 300.0 * 2.0f64.powf(l as f64 / 7.0)) as u32;
-	}
-	t
-}
+/// `LEVEL_EXP_TABLE[l]` is the experience needed to go from level `l` to
+/// level `l + 1`.
+pub const LEVEL_EXP_TABLE: [u32; 99] = [
+	0, 83, 91, 102, 112, 124, 138, 151, 168, 185, 204, 226, 249, 274, 304, 335, 369, 408, 450, 497,
+	548, 606, 667, 737, 814, 898, 990, 1094, 1207, 1332, 1470, 1623, 1791, 1977, 2182, 2409, 2658,
+	2935, 3240, 3576, 3947, 4358, 4810, 5310, 5863, 6471, 7144, 7887, 8707, 9612, 10612, 11715,
+	12934, 14278, 15764, 17404, 19214, 21212, 23420, 25856, 28546, 31516, 34795, 38416, 42413,
+	46826, 51699, 57079, 63019, 69576, 76818, 84812, 93638, 103383, 114143, 126022, 139138, 153619,
+	169608, 187260, 206750, 228269, 252027, 278259, 307221, 339198, 374502, 413482, 456519, 504037,
+	556499, 614422, 678376, 748985, 826944, 913019, 1008052, 1112977, 1228825,
+];
 
 /// The DPS of the attacker at the given levels and attack style, against
 /// the target.
@@ -202,11 +201,30 @@ fn dps_of<T: Target, F: Fn(Levels, AttackStyle) -> Attacker>(
 	MeleeDps::calculate(&attacker(levels, style), target).dps
 }
 
-
 #[cfg(test)]
 mod tests {
 	use super::*;
 	use crate::{AttackPrayer, GearBonus, NpcTarget, StrengthPrayer, WEAPONS};
+
+	#[test]
+	fn test_exp_table() {
+		/// `t[l]` is the total experience needed to reach level `l` from level 1.
+		fn level_exp_table() -> [u32; 100] {
+			let mut t = [0u32; 100];
+			let mut sum = 0u32;
+			for l in 1..=99 {
+				t[l] = sum / 4;
+				sum += (l as f64 + 300.0 * 2.0f64.powf(l as f64 / 7.0)) as u32;
+			}
+			t
+		}
+		assert!(
+			level_exp_table()
+				.array_windows()
+				.enumerate()
+				.all(|(i, &[a, b])| b - a == LEVEL_EXP_TABLE[i])
+		);
+	}
 
 	/// The test attacker: the fixed setup, wielding the strongest weapon in
 	/// `WEAPONS` that the attack level allows.
@@ -254,7 +272,6 @@ mod tests {
 			s: usize,
 			max: usize,
 			acc: f64,
-			level_exp: &[u32; 100],
 			attacker: &F,
 			target: &T,
 			best: &mut f64,
@@ -267,7 +284,6 @@ mod tests {
 				attack: a as u8,
 				strength: s as u8,
 			};
-			let exp_gain = |l: usize| (level_exp[l + 1] - level_exp[l]) as f64;
 			// Mirror `Solver::new`: attack level-ups are priced at the accurate style,
 			// strength level-ups at the aggressive style.
 			if a < max {
@@ -276,8 +292,7 @@ mod tests {
 					a + 1,
 					s,
 					max,
-					acc + exp_gain(a) / dps,
-					level_exp,
+					acc + LEVEL_EXP_TABLE[a] as f64 / dps,
 					attacker,
 					target,
 					best,
@@ -289,26 +304,15 @@ mod tests {
 					a,
 					s + 1,
 					max,
-					acc + exp_gain(s) / dps,
-					level_exp,
+					acc + LEVEL_EXP_TABLE[s] as f64 / dps,
 					attacker,
 					target,
 					best,
 				);
 			}
 		}
-		let level_exp = level_exp_table();
 		let mut best = f64::INFINITY;
-		rec(
-			1,
-			1,
-			MAX,
-			0.0,
-			&level_exp,
-			&test_attacker,
-			&target,
-			&mut best,
-		);
+		rec(1, 1, MAX, 0.0, &test_attacker, &target, &mut best);
 		assert!((total - best).abs() < 1e-9);
 
 		// Each step raises exactly one skill by one, `total` is the running

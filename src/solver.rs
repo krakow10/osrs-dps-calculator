@@ -67,6 +67,20 @@ pub struct Step<'a> {
 	pub point: &'a GridPoint,
 }
 
+impl Step<'_> {
+	/// The time spent on this step: the experience gained by the level-up,
+	/// priced at the DPS stored on the point it lands on. This holds for any
+	/// valid path through the grid, not just the solver's own optimum.
+	pub fn time(self) -> f64 {
+		let level = match self.skill {
+			Skill::Attack => self.attack - 1,
+			Skill::Strength => self.strength - 1,
+		};
+		let exp_gain = LEVEL_EXP_TABLE[level as usize] as f64;
+		exp_gain / self.point.dps
+	}
+}
+
 /// Iterator over the steps of a leveling path, one [`Step`] per level-up.
 pub struct GridPointIter<'a, const MAX: usize> {
 	solver: &'a Solver<MAX>,

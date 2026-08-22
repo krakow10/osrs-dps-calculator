@@ -36,13 +36,13 @@ pub struct Levels {
 
 /// A node in the solved grid.
 #[derive(Clone, Copy, Debug)]
-struct GridPoint {
+pub struct GridPoint {
 	/// The skill leveled up to reach this node.
-	came: Skill,
+	pub came: Skill,
 	/// The minimum total time to reach this node from 1/1.
-	dist: f64,
+	pub dist: f64,
 	/// The DPS at which the level-up into this node was priced.
-	dps: f64,
+	pub dps: f64,
 }
 
 /// The solved leveling grid: the minimum total time to reach each
@@ -51,6 +51,29 @@ struct GridPoint {
 pub struct Solver<const MAX: usize> {
 	/// `points[a - 1][s - 1]` is node (a, s).
 	points: [[GridPoint; MAX]; MAX],
+}
+
+/// One step of a leveling path: the grid point the level-up lands on and
+/// the destination's levels.
+#[derive(Clone, Copy, Debug)]
+pub struct Step<'a> {
+	/// The skill leveled up.
+	pub skill: Skill,
+	/// The attack level after the level-up.
+	pub attack: u32,
+	/// The strength level after the level-up.
+	pub strength: u32,
+	/// The point the level-up lands on.
+	pub point: &'a GridPoint,
+}
+
+/// Iterator over the steps of a leveling path, one [`Step`] per level-up.
+pub struct GridPointIter<'a, const MAX: usize> {
+	solver: &'a Solver<MAX>,
+	path: core::slice::Iter<'a, Skill>,
+	/// The path's current levels; each step raises one of them by one.
+	attack: usize,
+	strength: usize,
 }
 
 impl<const MAX: usize> Solver<MAX> {
@@ -123,6 +146,40 @@ impl<const MAX: usize> Solver<MAX> {
 		path.reverse();
 		path
 	}
+
+	/// Iterate over the steps of `path` from 1/1, one [`Step`] per level-up.
+	///
+	/// `path` must be a valid 1/1 -> MAX/MAX path, such as the one returned
+	/// by [`Solver::path`].
+	pub fn iter<'a>(&'a self, path: &'a [Skill]) -> GridPointIter<'a, MAX> {
+		GridPointIter {
+			solver: self,
+			path: path.iter(),
+			attack: 1,
+			strength: 1,
+		}
+	}
+}
+
+impl<'a, const MAX: usize> Iterator for GridPointIter<'a, MAX> {
+	type Item = Step<'a>;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		let skill = *self.path.next()?;
+		let (attack, strength) = match skill {
+			Skill::Attack => (self.attack + 1, self.strength),
+			Skill::Strength => (self.attack, self.strength + 1),
+		};
+		self.attack = attack;
+		self.strength = strength;
+		let point = &self.solver.points[attack - 1][strength - 1];
+		Some(Step {
+			skill,
+			attack: attack as u32,
+			strength: strength as u32,
+			point,
+		})
+	}
 }
 
 /// `t[l]` is the total experience needed to reach level `l` from level 1.
@@ -152,32 +209,21 @@ fn dps_of<T: Target, F: Fn(Levels, AttackStyle) -> Attacker>(
 /// per-step values are read straight from the grid's points.
 pub fn print_path<const MAX: usize>(solver: &Solver<MAX>, path: &[Skill]) {
 	println!("Optimal leveling path 1/1 -> {MAX}/{MAX} (minimizes sum of exp / dps):");
-	let mut a = 1usize;
-	let mut s = 1usize;
 	let mut total = 0.0f64;
-	for &skill in path {
+	for step in solver.iter(path) {
 		// The step's dist and dps are stored on the destination point; the
 		// DPS was measured in the state before leveling its skill.
-		(a, s) = match skill {
-			Skill::Attack => (a + 1, s),
-			Skill::Strength => (a, s + 1),
-		};
-		let point = &solver.points[a - 1][s - 1];
-		let prev = match skill {
-			Skill::Attack => &solver.points[a - 2][s - 1],
-			Skill::Strength => &solver.points[a - 1][s - 2],
-		};
-		let time = point.dist - prev.dist;
-		total = point.dist;
-		let dps = point.dps;
+		let time = step.point.dist - total;
+		total = step.point.dist;
+		let dps = step.point.dps;
 
 		println!(
 			"att={:02} str={:02}  step={:>12.4}  total={:>12.4}  {:>10} dps={:.4}",
-			a,
-			s,
+			step.attack,
+			step.strength,
 			time,
 			total,
-			skill.style_name(),
+			step.skill.style_name(),
 			dps
 		);
 	}
@@ -294,24 +340,19 @@ mod tests {
 
 		// Each step raises exactly one skill by one, `total` is the running
 		// sum of `time` from the 1/1 start, and the path ends at MAX/MAX.
-		let mut running = 0.0;
-		let mut a = 1usize;
-		let mut s = 1usize;
-		for skill in solver.path() {
-			(a, s) = match skill {
-				Skill::Attack => (a + 1, s),
-				Skill::Strength => (a, s + 1),
-			};
-			let point = &solver.points[a - 1][s - 1];
-			let prev = match skill {
-				Skill::Attack => &solver.points[a - 2][s - 1],
-				Skill::Strength => &solver.points[a - 1][s - 2],
-			};
-			let step_total = point.dist;
-			let step_time = point.dist - prev.dist;
+		let path = solver.path();
+		let mut end = (1u32, 1);
+		let mut it = solver.iter(&path);
+		let mut last = it.next().unwrap();
+		let mut running = last.point.dist;
+		for step in it {
+			let step_total = step.point.dist;
+			let step_time = step.point.dist - last.point.dist;
 			assert!((step_total - running - step_time).abs() < 1e-9);
 			running = step_total;
+			last = step;
+			end = (step.attack, step.strength);
 		}
-		assert_eq!((a, s), (MAX, MAX));
+		assert_eq!(end, (MAX as u32, MAX as u32));
 	}
 }

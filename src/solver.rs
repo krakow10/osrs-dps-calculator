@@ -45,25 +45,27 @@ impl Levels {
 }
 
 /// One level-up of a path, priced: the skill leveled up, the levels before
-/// the level-up, and the DPS the level-up is priced at.
+/// the level-up, and the experience gained per second the level-up is
+/// priced at.
 #[derive(Clone, Copy, Debug)]
 pub struct Step {
 	/// The skill leveled up.
 	pub skill: Skill,
 	/// The levels before the level-up.
 	pub levels: Levels,
-	/// The DPS the level-up is priced at: the DPS of `levels`, in the skill's
-	/// training style.
-	pub dps: f64,
+	/// The experience gained per second the level-up is priced at: the
+	/// experience gained per second of `levels`, in the skill's training
+	/// style.
+	pub exp_per_second: f64,
 }
 
 impl Step {
 	/// The time spent on this level-up: the experience needed for it, priced
-	/// at the step's DPS. This holds for any valid path through the grid, not
-	/// just the solver's own optimum.
+	/// at the step's experience gained per second. This holds for any valid
+	/// path through the grid, not just the solver's own optimum.
 	pub fn time(self) -> f64 {
 		let exp_gain = LEVEL_EXP_TABLE[self.levels.skill_level(self.skill) as usize] as f64;
-		exp_gain / self.dps
+		exp_gain / self.exp_per_second
 	}
 }
 
@@ -76,12 +78,13 @@ impl Path {
 	/// Find the attack/strength leveling path from 1/1 to MAX/MAX that
 	/// minimizes the total time, and return it.
 	///
-	/// The time spent on each level-up is proportional to the exp needed
-	/// for that level divided by the DPS at the state you're in while
-	/// leveling it up. The attack style used while leveling matters: attack
+	/// The time spent on each level-up is the exp needed for that level
+	/// divided by the experience gained per second at the state you're in
+	/// while leveling it up. The attack style used while leveling matters:
+	/// attack
 	/// can only be leveled with the Accurate style and strength with the
-	/// Aggressive style, so each level-up edge is priced at the DPS of the
-	/// style that trains it.
+	/// Aggressive style, so each level-up edge is priced at the experience
+	/// gained per second of the style that trains it.
 	///
 	/// The leveling graph is a DAG (edges only increase attack or
 	/// strength), so a topological-order DP finds the optimum exactly.
@@ -109,8 +112,8 @@ impl Path {
 						continue;
 					}
 					let levels = levels(a, s);
-					let dps = dps_of(&attacker, target, levels, skill.style());
-					let nd = d + Step { skill, levels, dps }.time();
+					let exp_per_second = exp_per_second_of(&attacker, target, levels, skill.style());
+					let nd = d + Step { skill, levels, exp_per_second }.time();
 					if nd < dist[attack - 1][strength - 1] {
 						dist[attack - 1][strength - 1] = nd;
 						came[attack - 1][strength - 1] = skill;
@@ -136,8 +139,8 @@ impl Path {
 	/// Iterate over the path from 1/1, one [`Skill`] per level-up, in order.
 	///
 	/// Chain [`PathIter::levels`] to pair each level-up with the levels
-	/// before it, then [`LevelsIter::steps`] to price each at a DPS and
-	/// derive times.
+	/// before it, then [`LevelsIter::steps`] to price each at the experience
+	/// gained per second and derive times.
 	pub fn iter(&self) -> PathIter<'_> {
 		PathIter(self.skills.iter())
 	}
@@ -193,10 +196,10 @@ impl<'a> Iterator for LevelsIter<'a> {
 }
 
 impl<'a> LevelsIter<'a> {
-	/// Price each level-up at the DPS of `attacker` against `target` at the
-	/// levels before it, in the skill's training style, yielding one [`Step`]
-	/// per level-up. The same path can be priced with a different `attacker`
-	/// or `target`.
+	/// Price each level-up at the experience gained per second of `attacker`
+	/// against `target` at the levels before it, in the skill's training
+	/// style, yielding one [`Step`] per level-up. The same path can be priced
+	/// with a different `attacker` or `target`.
 	pub fn steps<'t, F, T>(self, attacker: F, target: &'t T) -> StepIter<'a, 't, F, T>
 	where
 		F: Fn(Levels, AttackStyle) -> Attacker,
@@ -227,8 +230,8 @@ where
 
 	fn next(&mut self) -> Option<Step> {
 		let (skill, levels) = self.path.next()?;
-		let dps = dps_of(&self.attacker, self.target, levels, skill.style());
-		Some(Step { skill, levels, dps })
+		let exp_per_second = exp_per_second_of(&self.attacker, self.target, levels, skill.style());
+		Some(Step { skill, levels, exp_per_second })
 	}
 }
 
@@ -244,15 +247,21 @@ pub const LEVEL_EXP_TABLE: [u32; 99] = [
 	556499, 614422, 678376, 748985, 826944, 913019, 1008052, 1112977, 1228825,
 ];
 
-/// The DPS of the attacker at the given levels and attack style, against
-/// the target.
-fn dps_of<T: Target, F: Fn(Levels, AttackStyle) -> Attacker>(
+/// The normal experience gained per damage in melee combat: 4 experience
+/// per damage, so the experience gained per second is the DPS times this.
+/// <https://oldschool.runescape.wiki/w/Combat#Experience_gain>
+pub const EXP_PER_DAMAGE: f64 = 4.0;
+
+/// The experience gained per second of the attacker at the given levels
+/// and attack style, against the target: the DPS times the normal
+/// experience gained per damage.
+fn exp_per_second_of<T: Target, F: Fn(Levels, AttackStyle) -> Attacker>(
 	attacker: &F,
 	target: &T,
 	levels: Levels,
 	style: AttackStyle,
 ) -> f64 {
-	MeleeDps::calculate(&attacker(levels, style), target).dps
+	MeleeDps::calculate(&attacker(levels, style), target).dps * EXP_PER_DAMAGE
 }
 
 #[cfg(test)]
@@ -334,24 +343,26 @@ mod tests {
 			// Mirror `Path::new`: attack level-ups are priced at the accurate style,
 			// strength level-ups at the aggressive style.
 			if a < max {
-				let dps = dps_of(attacker, target, levels, Skill::Attack.style());
+				let exp_per_second =
+					exp_per_second_of(attacker, target, levels, Skill::Attack.style());
 				rec(
 					a + 1,
 					s,
 					max,
-					acc + LEVEL_EXP_TABLE[a] as f64 / dps,
+					acc + LEVEL_EXP_TABLE[a] as f64 / exp_per_second,
 					attacker,
 					target,
 					best,
 				);
 			}
 			if s < max {
-				let dps = dps_of(attacker, target, levels, Skill::Strength.style());
+				let exp_per_second =
+					exp_per_second_of(attacker, target, levels, Skill::Strength.style());
 				rec(
 					a,
 					s + 1,
 					max,
-					acc + LEVEL_EXP_TABLE[s] as f64 / dps,
+					acc + LEVEL_EXP_TABLE[s] as f64 / exp_per_second,
 					attacker,
 					target,
 					best,

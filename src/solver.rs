@@ -112,8 +112,14 @@ impl Path {
 						continue;
 					}
 					let levels = levels(a, s);
-					let exp_per_second = exp_per_second_of(&attacker, target, levels, skill.style());
-					let nd = d + Step { skill, levels, exp_per_second }.time();
+					let exp_per_second =
+						exp_per_second_of(&attacker, target, levels, skill.style());
+					let nd = d + Step {
+						skill,
+						levels,
+						exp_per_second,
+					}
+					.time();
 					if nd < dist[attack - 1][strength - 1] {
 						dist[attack - 1][strength - 1] = nd;
 						came[attack - 1][strength - 1] = skill;
@@ -231,7 +237,11 @@ where
 	fn next(&mut self) -> Option<Step> {
 		let (skill, levels) = self.path.next()?;
 		let exp_per_second = exp_per_second_of(&self.attacker, self.target, levels, skill.style());
-		Some(Step { skill, levels, exp_per_second })
+		Some(Step {
+			skill,
+			levels,
+			exp_per_second,
+		})
 	}
 }
 

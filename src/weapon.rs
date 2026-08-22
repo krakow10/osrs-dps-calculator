@@ -148,3 +148,51 @@ pub const WEAPONS: &[(WeaponStats, u8)] = &[
 	(ABYSSAL_WHIP, 70),
 	(BLADE_OF_SAELDOR, 80),
 ];
+
+/// The strongest weapon in [`WEAPONS`] that the given attack level allows.
+pub fn strongest_scimitar(attack: u8) -> WeaponStats {
+	WEAPONS
+		.iter()
+		.rev()
+		.find(|(_, min_attack)| attack >= *min_attack)
+		.map(|(stats, _)| *stats)
+		.expect("WEAPONS always contains a weapon with no level requirement")
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	/// The weapon switches out exactly when the attacker reaches each
+	/// weapon's required attack level.
+	#[test]
+	fn weapon_switches_at_required_attack_level() {
+		// Iron scimitar at 1, until 5 attack.
+		assert_eq!(strongest_scimitar(1), IRON_SCIMITAR);
+		assert_eq!(strongest_scimitar(4), IRON_SCIMITAR);
+		// Steel scimitar at 5, until 10 attack.
+		assert_eq!(strongest_scimitar(5), STEEL_SCIMITAR);
+		assert_eq!(strongest_scimitar(9), STEEL_SCIMITAR);
+		// Black scimitar at 10, until 20 attack.
+		assert_eq!(strongest_scimitar(10), BLACK_SCIMITAR);
+		assert_eq!(strongest_scimitar(19), BLACK_SCIMITAR);
+		// Mithril scimitar at 20, until 30 attack.
+		assert_eq!(strongest_scimitar(20), MITHRIL_SCIMITAR);
+		assert_eq!(strongest_scimitar(29), MITHRIL_SCIMITAR);
+		// Adamant scimitar at 30, until 40 attack.
+		assert_eq!(strongest_scimitar(30), ADAMANT_SCIMITAR);
+		assert_eq!(strongest_scimitar(39), ADAMANT_SCIMITAR);
+		// Rune scimitar at 40, until 60 attack.
+		assert_eq!(strongest_scimitar(40), RUNE_SCIMITAR);
+		assert_eq!(strongest_scimitar(59), RUNE_SCIMITAR);
+		// Dragon scimitar at 60, until 70 attack.
+		assert_eq!(strongest_scimitar(60), DRAGON_SCIMITAR);
+		assert_eq!(strongest_scimitar(69), DRAGON_SCIMITAR);
+		// Abyssal whip at 70, until 80 attack.
+		assert_eq!(strongest_scimitar(70), ABYSSAL_WHIP);
+		assert_eq!(strongest_scimitar(79), ABYSSAL_WHIP);
+		// Blade of Saeldor at 80.
+		assert_eq!(strongest_scimitar(80), BLADE_OF_SAELDOR);
+		assert_eq!(strongest_scimitar(99), BLADE_OF_SAELDOR);
+	}
+}

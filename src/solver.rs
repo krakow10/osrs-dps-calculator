@@ -69,6 +69,64 @@ pub struct Path {
 }
 
 impl Path {
+	/// Find the attack/strength leveling path from 1/1 to MAX/MAX that
+	/// minimizes the total time, and return it.
+	///
+	/// The time spent on each level-up is proportional to the exp needed
+	/// for that level divided by the DPS at the state you're in while
+	/// leveling it up. The attack style used while leveling matters: attack
+	/// can only be leveled with the Accurate style and strength with the
+	/// Aggressive style, so each level-up edge is priced at the DPS of the
+	/// style that trains it.
+	///
+	/// The leveling graph is a DAG (edges only increase attack or
+	/// strength), so a topological-order DP finds the optimum exactly.
+	pub fn new<const MAX: usize, F: Fn(Levels, AttackStyle) -> Attacker, T: Target>(
+		attacker: F,
+		target: &T,
+	) -> Self {
+		let levels = |a: usize, s: usize| Levels {
+			attack: a as u8,
+			strength: s as u8,
+		};
+		let mut came = [[Skill::Attack; MAX]; MAX];
+		let mut dist = [[f64::INFINITY; MAX]; MAX];
+		dist[0][0] = 0.0;
+
+		for a in 1..=MAX {
+			for s in 1..=MAX {
+				let d = dist[a - 1][s - 1];
+				for skill in [Skill::Attack, Skill::Strength] {
+					let (attack, strength) = match skill {
+						Skill::Attack => (a + 1, s),
+						Skill::Strength => (a, s + 1),
+					};
+					if attack > MAX || strength > MAX {
+						continue;
+					}
+					let nd = d + step_time(&attacker, target, levels(a, s), skill);
+					if nd < dist[attack - 1][strength - 1] {
+						dist[attack - 1][strength - 1] = nd;
+						came[attack - 1][strength - 1] = skill;
+					}
+				}
+			}
+		}
+
+		let mut skills = Vec::with_capacity(2 * (MAX - 1));
+		let (mut a, mut s) = (MAX, MAX);
+		while (a, s) != (1, 1) {
+			let skill = came[a - 1][s - 1];
+			(a, s) = match skill {
+				Skill::Attack => (a - 1, s),
+				Skill::Strength => (a, s - 1),
+			};
+			skills.push(skill);
+		}
+		skills.reverse();
+		Path { skills }
+	}
+
 	/// Iterate over the path from 1/1, one [`Step`] per level-up.
 	///
 	/// Each step is priced at the DPS of `attacker` at the path's current
@@ -125,64 +183,6 @@ where
 			dps,
 		})
 	}
-}
-
-/// Find the attack/strength leveling path from 1/1 to MAX/MAX that
-/// minimizes the total time, and return it.
-///
-/// The time spent on each level-up is proportional to the exp needed
-/// for that level divided by the DPS at the state you're in while
-/// leveling it up. The attack style used while leveling matters: attack
-/// can only be leveled with the Accurate style and strength with the
-/// Aggressive style, so each level-up edge is priced at the DPS of the
-/// style that trains it.
-///
-/// The leveling graph is a DAG (edges only increase attack or
-/// strength), so a topological-order DP finds the optimum exactly.
-pub fn solve<const MAX: usize, T: Target, F: Fn(Levels, AttackStyle) -> Attacker>(
-	attacker: F,
-	target: &T,
-) -> Path {
-	let levels = |a: usize, s: usize| Levels {
-		attack: a as u8,
-		strength: s as u8,
-	};
-	let mut came = [[Skill::Attack; MAX]; MAX];
-	let mut dist = [[f64::INFINITY; MAX]; MAX];
-	dist[0][0] = 0.0;
-
-	for a in 1..=MAX {
-		for s in 1..=MAX {
-			let d = dist[a - 1][s - 1];
-			for skill in [Skill::Attack, Skill::Strength] {
-				let (attack, strength) = match skill {
-					Skill::Attack => (a + 1, s),
-					Skill::Strength => (a, s + 1),
-				};
-				if attack > MAX || strength > MAX {
-					continue;
-				}
-				let nd = d + step_time(&attacker, target, levels(a, s), skill);
-				if nd < dist[attack - 1][strength - 1] {
-					dist[attack - 1][strength - 1] = nd;
-					came[attack - 1][strength - 1] = skill;
-				}
-			}
-		}
-	}
-
-	let mut skills = Vec::with_capacity(2 * (MAX - 1));
-	let (mut a, mut s) = (MAX, MAX);
-	while (a, s) != (1, 1) {
-		let skill = came[a - 1][s - 1];
-		(a, s) = match skill {
-			Skill::Attack => (a - 1, s),
-			Skill::Strength => (a, s - 1),
-		};
-		skills.push(skill);
-	}
-	skills.reverse();
-	Path { skills }
 }
 
 /// `LEVEL_EXP_TABLE[l]` is the experience needed to go from level `l` to
@@ -278,7 +278,7 @@ mod tests {
 	}
 
 	/// Exhaustive check of the optimum over every monotone path on a small
-	/// grid, as an independent verification of `solve`'s DP.
+	/// grid, as an independent verification of `Path::new`'s DP.
 	#[test]
 	fn solver_matches_brute_force() {
 		const MAX: usize = 6;
@@ -301,7 +301,7 @@ mod tests {
 				attack: a as u8,
 				strength: s as u8,
 			};
-			// Mirror `solve`: attack level-ups are priced at the accurate style,
+			// Mirror `Path::new`: attack level-ups are priced at the accurate style,
 			// strength level-ups at the aggressive style.
 			if a < max {
 				let dps = dps_of(attacker, target, levels, Skill::Attack.style());
@@ -331,7 +331,7 @@ mod tests {
 		let mut best = f64::INFINITY;
 		rec(1, 1, MAX, 0.0, &test_attacker, &target, &mut best);
 
-		let path = solve::<MAX, _, _>(test_attacker, &target);
+		let path = Path::new::<MAX, _, _>(test_attacker, &target);
 		let total: f64 = path.iter(test_attacker, &target).map(Step::time).sum();
 		assert!((total - best).abs() < 1e-9);
 

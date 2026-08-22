@@ -45,7 +45,7 @@ fn main() {
 	let path_rune_scim = Path::new::<MAX_LEVEL, _, _>(attacker_rune_scim, &ROCK_CRAB);
 	let path_bis = Path::new::<MAX_LEVEL, _, _>(attacker_bis, &ROCK_CRAB);
 
-	// How does the rune scim path rate on the BIS level up solver's figures?
+	// How does the rune-scim-only optimal path rate when using the BIS weapon?
 	let time_rune_scim: f64 = path_rune_scim
 		.iter()
 		.levels()

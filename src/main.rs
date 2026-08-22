@@ -43,8 +43,8 @@ const ROCK_CRAB: NpcTarget = NpcTarget {
 
 fn main() {
 	let start = Levels {
-		attack: 1,
-		strength: 1,
+		attack: 60,
+		strength: 60,
 	};
 	let path_rune_scim = Path::new::<MAX_LEVEL, _, _>(start, attacker_rune_scim, &ROCK_CRAB);
 	let path_bis = Path::new::<MAX_LEVEL, _, _>(start, attacker_bis, &ROCK_CRAB);
@@ -63,25 +63,12 @@ fn main() {
 		.map(Step::time)
 		.sum();
 
-	// what if you alternate leveling attack and strength?
-	let path_alt = Path::from_iter([Skill::Attack, Skill::Strength].repeat(98));
-	let time_alt: f64 = path_alt
-		.iter()
-		.levels(Levels::default())
-		.steps(attacker_bis, &ROCK_CRAB)
-		.map(Step::time)
-		.sum();
-
 	println!(
 		"bis time = {:.1}s
 rune scim time = {:.1}s
-rune scim path is {:.1}% worse
-alt time = {:.1}s
-alt path is {:.1}% worse",
+rune scim path is {:.1}% worse",
 		time_bis,
 		time_rune_scim,
 		100.0 * (time_rune_scim / time_bis - 1.0),
-		time_alt,
-		100.0 * (time_alt / time_bis - 1.0),
 	);
 }

@@ -166,17 +166,15 @@ impl<'a, const MAX: usize> Iterator for GridPointIter<'a, MAX> {
 
 	fn next(&mut self) -> Option<Self::Item> {
 		let skill = *self.path.next()?;
-		let (attack, strength) = match skill {
-			Skill::Attack => (self.attack + 1, self.strength),
-			Skill::Strength => (self.attack, self.strength + 1),
+		match skill {
+			Skill::Attack => self.attack += 1,
+			Skill::Strength => self.strength += 1,
 		};
-		self.attack = attack;
-		self.strength = strength;
-		let point = &self.solver.points[attack - 1][strength - 1];
+		let point = &self.solver.points[self.attack - 1][self.strength - 1];
 		Some(Step {
 			skill,
-			attack: attack as u32,
-			strength: strength as u32,
+			attack: self.attack as u32,
+			strength: self.strength as u32,
 			point,
 		})
 	}

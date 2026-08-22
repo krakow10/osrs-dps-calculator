@@ -9,7 +9,7 @@ const MAX_LEVEL: usize = 99;
 /// The attacker at the given levels and style: no boosts, no prayers, no
 /// void, no gear bonus, wielding the strongest weapon in `WEAPONS` that the
 /// attack level allows.
-fn attacker(levels: Levels, style: AttackStyle) -> Attacker {
+fn attacker(levels: Levels, attack_style: AttackStyle) -> Attacker {
 	let weapon = WEAPONS
 		.iter()
 		.rev()
@@ -24,7 +24,7 @@ fn attacker(levels: Levels, style: AttackStyle) -> Attacker {
 		strength_prayer: StrengthPrayer::None,
 		attack_prayer: AttackPrayer::None,
 		weapon,
-		attack_style: style,
+		attack_style,
 		void: false,
 		gear_bonus: GearBonus::None,
 	}

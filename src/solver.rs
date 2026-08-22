@@ -44,6 +44,15 @@ impl Levels {
 	}
 }
 
+impl Default for Levels {
+	fn default() -> Self {
+		Levels {
+			attack: 1,
+			strength: 1,
+		}
+	}
+}
+
 /// One level-up of a path, priced: the skill leveled up, the levels before
 /// the level-up, and the experience gained per second the level-up is
 /// priced at.

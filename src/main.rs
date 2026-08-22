@@ -67,7 +67,7 @@ fn main() {
 	let path_alt = Path::from_iter([Skill::Attack, Skill::Strength].repeat(98));
 	let time_alt: f64 = path_alt
 		.iter()
-		.levels(start)
+		.levels(Levels::default())
 		.steps(attacker_bis, &ROCK_CRAB)
 		.map(Step::time)
 		.sum();

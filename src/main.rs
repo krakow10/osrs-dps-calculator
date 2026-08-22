@@ -42,19 +42,23 @@ const ROCK_CRAB: NpcTarget = NpcTarget {
 };
 
 fn main() {
-	let path_rune_scim = Path::new::<MAX_LEVEL, _, _>(attacker_rune_scim, &ROCK_CRAB);
-	let path_bis = Path::new::<MAX_LEVEL, _, _>(attacker_bis, &ROCK_CRAB);
+	let start = Levels {
+		attack: 1,
+		strength: 1,
+	};
+	let path_rune_scim = Path::new::<MAX_LEVEL, _, _>(start, attacker_rune_scim, &ROCK_CRAB);
+	let path_bis = Path::new::<MAX_LEVEL, _, _>(start, attacker_bis, &ROCK_CRAB);
 
 	// How does the rune-scim-only optimal path rate when using the BIS weapon?
 	let time_rune_scim: f64 = path_rune_scim
 		.iter()
-		.levels()
+		.levels(start)
 		.steps(attacker_bis, &ROCK_CRAB)
 		.map(Step::time)
 		.sum();
 	let time_bis: f64 = path_bis
 		.iter()
-		.levels()
+		.levels(start)
 		.steps(attacker_bis, &ROCK_CRAB)
 		.map(Step::time)
 		.sum();
@@ -63,7 +67,7 @@ fn main() {
 	let path_alt = Path::from_iter([Skill::Attack, Skill::Strength].repeat(98));
 	let time_alt: f64 = path_alt
 		.iter()
-		.levels()
+		.levels(start)
 		.steps(attacker_bis, &ROCK_CRAB)
 		.map(Step::time)
 		.sum();

@@ -69,14 +69,16 @@ impl Step {
 	}
 }
 
-/// The optimal sequence of skill level-ups from 1/1 to MAX/MAX, in order.
+/// The optimal sequence of skill level-ups, from a starting level to
+/// MAX/MAX, in order.
 pub struct Path {
 	skills: Vec<Skill>,
 }
 
 impl Path {
-	/// Find the attack/strength leveling path from 1/1 to MAX/MAX that
-	/// minimizes the total time, and return it.
+	/// Find the attack/strength leveling path from `start` to MAX/MAX that
+	/// minimizes the total time, and return it. `start` must be between
+	/// level 1 and MAX in both attack and strength.
 	///
 	/// The time spent on each level-up is the exp needed for that level
 	/// divided by the experience gained per second at the state you're in
@@ -89,19 +91,21 @@ impl Path {
 	/// The leveling graph is a DAG (edges only increase attack or
 	/// strength), so a topological-order DP finds the optimum exactly.
 	pub fn new<const MAX: usize, F: Fn(Levels, AttackStyle) -> Attacker, T: Target>(
+		start: Levels,
 		attacker: F,
 		target: &T,
 	) -> Self {
+		let (start_a, start_s) = (start.attack as usize, start.strength as usize);
 		let levels = |a: usize, s: usize| Levels {
 			attack: a as u8,
 			strength: s as u8,
 		};
 		let mut came = [[Skill::Attack; MAX]; MAX];
 		let mut dist = [[f64::INFINITY; MAX]; MAX];
-		dist[0][0] = 0.0;
+		dist[start_a - 1][start_s - 1] = 0.0;
 
-		for a in 1..=MAX {
-			for s in 1..=MAX {
+		for a in start_a..=MAX {
+			for s in start_s..=MAX {
 				let d = dist[a - 1][s - 1];
 				for skill in [Skill::Attack, Skill::Strength] {
 					let (attack, strength) = match skill {
@@ -128,9 +132,9 @@ impl Path {
 			}
 		}
 
-		let mut skills = Vec::with_capacity(2 * (MAX - 1));
+		let mut skills = Vec::with_capacity((MAX - start_a) + (MAX - start_s));
 		let (mut a, mut s) = (MAX, MAX);
-		while (a, s) != (1, 1) {
+		while (a, s) != (start_a, start_s) {
 			let skill = came[a - 1][s - 1];
 			(a, s) = match skill {
 				Skill::Attack => (a - 1, s),
@@ -142,7 +146,7 @@ impl Path {
 		Path { skills }
 	}
 
-	/// Iterate over the path from 1/1, one [`Skill`] per level-up, in order.
+	/// Iterate over the path's level-ups, one [`Skill`] per level-up, in order.
 	///
 	/// Chain [`PathIter::levels`] to pair each level-up with the levels
 	/// before it, then [`LevelsIter::steps`] to price each at the experience
@@ -171,14 +175,12 @@ impl<'a> Iterator for PathIter<'a> {
 }
 
 impl<'a> PathIter<'a> {
-	/// Pair each level-up with the levels before it.
-	pub fn levels(self) -> LevelsIter<'a> {
+	/// Pair each level-up with the levels before it, where the first
+	/// level-up happens from `levels`.
+	pub fn levels(self, levels: Levels) -> LevelsIter<'a> {
 		LevelsIter {
 			path: self.0,
-			levels: Levels {
-				attack: 1,
-				strength: 1,
-			},
+			levels,
 		}
 	}
 }
@@ -333,7 +335,8 @@ mod tests {
 	}
 
 	/// Exhaustive check of the optimum over every monotone path on a small
-	/// grid, as an independent verification of `Path::new`'s DP.
+	/// grid, from two different starting levels, as an independent
+	/// verification of `Path::new`'s DP.
 	#[test]
 	fn solver_matches_brute_force() {
 		const MAX: usize = 6;
@@ -385,38 +388,54 @@ mod tests {
 				);
 			}
 		}
-		let mut best = f64::INFINITY;
-		rec(1, 1, MAX, 0.0, &test_attacker, &target, &mut best);
-
-		let path = Path::new::<MAX, _, _>(test_attacker, &target);
-		let total: f64 = path
-			.iter()
-			.levels()
-			.steps(test_attacker, &target)
-			.map(Step::time)
-			.sum();
-		assert!((total - best).abs() < 1e-9);
-
-		// Replay the path from 1/1: each level-up is priced from the current
-		// levels, and the path ends at MAX/MAX. No attacker or target needed
-		// for this.
-		let mut current = Levels {
-			attack: 1,
-			strength: 1,
-		};
-		for (skill, levels) in path.iter().levels() {
-			assert_eq!(levels, current);
-			match skill {
-				Skill::Attack => current.attack += 1,
-				Skill::Strength => current.strength += 1,
-			}
-		}
-		assert_eq!(
-			current,
+		for start in [
 			Levels {
-				attack: MAX as u8,
-				strength: MAX as u8,
+				attack: 1,
+				strength: 1,
 			},
-		);
+			Levels {
+				attack: 2,
+				strength: 4,
+			},
+		] {
+			let mut best = f64::INFINITY;
+			rec(
+				start.attack as usize,
+				start.strength as usize,
+				MAX,
+				0.0,
+				&test_attacker,
+				&target,
+				&mut best,
+			);
+
+			let path = Path::new::<MAX, _, _>(start, test_attacker, &target);
+			let total: f64 = path
+				.iter()
+				.levels(start)
+				.steps(test_attacker, &target)
+				.map(Step::time)
+				.sum();
+			assert!((total - best).abs() < 1e-9);
+
+			// Replay the path from `start`: each level-up is priced from the current
+			// levels, and the path ends at MAX/MAX. No attacker or target needed
+			// for this.
+			let mut current = start;
+			for (skill, levels) in path.iter().levels(start) {
+				assert_eq!(levels, current);
+				match skill {
+					Skill::Attack => current.attack += 1,
+					Skill::Strength => current.strength += 1,
+				}
+			}
+			assert_eq!(
+				current,
+				Levels {
+					attack: MAX as u8,
+					strength: MAX as u8,
+				},
+			);
+		}
 	}
 }

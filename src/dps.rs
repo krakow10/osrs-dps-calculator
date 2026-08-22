@@ -4,12 +4,12 @@ use crate::target::Target;
 /// All intermediate values and the final DPS.
 #[derive(Debug)]
 pub struct MeleeDps {
-	pub effective_strength: u32,
+	pub effective_strength: u8,
 	pub max_hit: u32,
-	pub effective_attack: u32,
+	pub effective_attack: u8,
 	pub attack_roll: u32,
 	/// `Some` for player targets, `None` for NPCs.
-	pub effective_defence: Option<u32>,
+	pub effective_defence: Option<u8>,
 	pub defence_roll: u32,
 	pub hit_chance: f64,
 	pub average_damage_per_attack: f64,
@@ -109,18 +109,18 @@ impl MeleeDps {
 /// Steps one/three/five: (level + boost) * prayer, floor, + style bonus, +8,
 /// optional *1.1 void, floor.
 pub(crate) fn effective_level(
-	level: u32,
+	level: u8,
 	boost: i32,
 	prayer_mult: f64,
-	style_bonus: u32,
+	style_bonus: u8,
 	void: bool,
-) -> u32 {
+) -> u8 {
 	let mut lvl = (level as f64 + boost as f64) * prayer_mult;
 	lvl = lvl.floor() + style_bonus as f64 + 8.0;
 	if void {
 		lvl *= 1.1;
 	}
-	lvl.floor() as u32
+	lvl.floor() as u8
 }
 
 impl std::fmt::Display for MeleeDps {

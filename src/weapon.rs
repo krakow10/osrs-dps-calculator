@@ -137,7 +137,7 @@ pub const BLADE_OF_SAELDOR: WeaponStats = WeaponStats {
 ///
 /// The scimitars can be wielded at any level; the abyssal whip requires 70
 /// attack and the blade of Saeldor 80.
-pub const WEAPONS: &[(WeaponStats, u32)] = &[
+pub const WEAPONS: &[(WeaponStats, u8)] = &[
 	(IRON_SCIMITAR, 1),
 	(STEEL_SCIMITAR, 5),
 	(BLACK_SCIMITAR, 10),

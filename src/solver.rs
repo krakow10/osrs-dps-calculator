@@ -30,8 +30,8 @@ impl Skill {
 /// The attacker's attack and strength levels.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Levels {
-	pub attack: u32,
-	pub strength: u32,
+	pub attack: u8,
+	pub strength: u8,
 }
 
 /// A node in the solved grid.
@@ -60,9 +60,9 @@ pub struct Step<'a> {
 	/// The skill leveled up.
 	pub skill: Skill,
 	/// The attack level after the level-up.
-	pub attack: u32,
+	pub attack: u8,
 	/// The strength level after the level-up.
-	pub strength: u32,
+	pub strength: u8,
 	/// The point the level-up lands on.
 	pub point: &'a GridPoint,
 }
@@ -72,8 +72,8 @@ pub struct GridPointIter<'a, const MAX: usize> {
 	solver: &'a Solver<MAX>,
 	path: core::slice::Iter<'a, Skill>,
 	/// The path's current levels; each step raises one of them by one.
-	attack: usize,
-	strength: usize,
+	attack: u8,
+	strength: u8,
 }
 
 impl<const MAX: usize> Solver<MAX> {
@@ -93,8 +93,8 @@ impl<const MAX: usize> Solver<MAX> {
 		let level_exp = level_exp_table();
 		let exp_gain = |l: usize| (level_exp[l + 1] - level_exp[l]) as f64;
 		let levels = |a: usize, s: usize| Levels {
-			attack: a as u32,
-			strength: s as u32,
+			attack: a as u8,
+			strength: s as u8,
 		};
 		let mut solver = Solver {
 			points: [[GridPoint {
@@ -170,11 +170,11 @@ impl<'a, const MAX: usize> Iterator for GridPointIter<'a, MAX> {
 			Skill::Attack => self.attack += 1,
 			Skill::Strength => self.strength += 1,
 		};
-		let point = &self.solver.points[self.attack - 1][self.strength - 1];
+		let point = &self.solver.points[self.attack as usize - 1][self.strength as usize - 1];
 		Some(Step {
 			skill,
-			attack: self.attack as u32,
-			strength: self.strength as u32,
+			attack: self.attack,
+			strength: self.strength,
 			point,
 		})
 	}
@@ -289,8 +289,8 @@ mod tests {
 				return;
 			}
 			let levels = Levels {
-				attack: a as u32,
-				strength: s as u32,
+				attack: a as u8,
+				strength: s as u8,
 			};
 			let exp_gain = |l: usize| (level_exp[l + 1] - level_exp[l]) as f64;
 			// Mirror `Solver::new`: attack level-ups are priced at the accurate style,
@@ -339,7 +339,7 @@ mod tests {
 		// Each step raises exactly one skill by one, `total` is the running
 		// sum of `time` from the 1/1 start, and the path ends at MAX/MAX.
 		let path = solver.path();
-		let mut end = (1u32, 1);
+		let mut end = (1u8, 1);
 		let mut it = solver.iter(&path);
 		let mut last = it.next().unwrap();
 		let mut running = last.point.dist;
@@ -351,6 +351,6 @@ mod tests {
 			last = step;
 			end = (step.attack, step.strength);
 		}
-		assert_eq!(end, (MAX as u32, MAX as u32));
+		assert_eq!(end, (MAX as u8, MAX as u8));
 	}
 }

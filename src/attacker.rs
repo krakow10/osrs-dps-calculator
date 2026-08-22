@@ -103,8 +103,8 @@ impl AttackPrayer {
 /// The player doing the attacking.
 #[derive(Debug, Clone, Copy)]
 pub struct Attacker {
-	pub strength: u32,
-	pub attack: u32,
+	pub strength: u8,
+	pub attack: u8,
 	/// Temporary strength level boost (potion, cape, etc.).
 	pub strength_boost: i32,
 	/// Temporary attack level boost (potion, cape, etc.).

@@ -54,7 +54,7 @@ mod tests {
 		IRON_SCIMITAR, MITHRIL_SCIMITAR, RUNE_SCIMITAR, STEEL_SCIMITAR, WeaponStats,
 	};
 
-	fn weapon(attack: u32) -> WeaponStats {
+	fn weapon(attack: u8) -> WeaponStats {
 		attacker(
 			Levels {
 				attack,

@@ -53,14 +53,14 @@ pub trait Target {
 	/// NPCs have no effective level and use `(defence + 9) * (defence bonus + 64)`;
 	/// players use the effective defence level derived from their base level,
 	/// boost, prayer, and attack style.
-	fn defence(&self) -> (Option<u32>, u32);
+	fn defence(&self) -> (Option<u8>, u32);
 }
 
 /// NPC target.
 #[derive(Debug, Clone)]
 pub struct NpcTarget {
 	/// Base defence level: the shield-icon value on the wiki.
-	pub defence: u32,
+	pub defence: u8,
 	/// Target's stab/slash/crush defence bonus matching the attack type.
 	pub defence_bonus: i32,
 }
@@ -68,7 +68,7 @@ pub struct NpcTarget {
 impl Target for NpcTarget {
 	const ACCEPTS_GEAR_BONUS: bool = true;
 
-	fn defence(&self) -> (Option<u32>, u32) {
+	fn defence(&self) -> (Option<u8>, u32) {
 		// NPC: (defence level + 9) * (defence bonus + 64)
 		(
 			None,
@@ -81,7 +81,7 @@ impl Target for NpcTarget {
 #[derive(Debug, Clone)]
 pub struct PlayerTarget {
 	/// Base defence level.
-	pub defence: u32,
+	pub defence: u8,
 	/// Temporary defence boost.
 	pub defence_boost: i32,
 	/// Defence prayer being used.
@@ -101,7 +101,7 @@ impl Target for PlayerTarget {
 		self.protect_from_melee
 	}
 
-	fn defence(&self) -> (Option<u32>, u32) {
+	fn defence(&self) -> (Option<u8>, u32) {
 		let def_style_bonus = match self.attack_style {
 			AttackStyle::Defensive => 3,
 			AttackStyle::Controlled => 1,

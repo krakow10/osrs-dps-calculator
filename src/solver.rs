@@ -202,31 +202,6 @@ fn dps_of<T: Target, F: Fn(Levels, AttackStyle) -> Attacker>(
 	MeleeDps::calculate(&attacker(levels, style), target).dps
 }
 
-/// Print the path one line per level-up, showing the step time, the
-/// cumulative time, and the style (and DPS) the step was priced at. The
-/// per-step values are read straight from the grid's points.
-pub fn print_path<const MAX: usize>(solver: &Solver<MAX>, path: &[Skill]) {
-	println!("Optimal leveling path 1/1 -> {MAX}/{MAX} (minimizes sum of exp / dps):");
-	let mut total = 0.0f64;
-	for step in solver.iter(path) {
-		// The step's dist and dps are stored on the destination point; the
-		// DPS was measured in the state before leveling its skill.
-		let time = step.point.dist - total;
-		total = step.point.dist;
-		let dps = step.point.dps;
-
-		println!(
-			"att={:02} str={:02}  step={:>12.4}  total={:>12.4}  {:>10} dps={:.4}",
-			step.attack,
-			step.strength,
-			time,
-			total,
-			step.skill.style_name(),
-			dps
-		);
-	}
-	println!("Total time: {:.4}", total);
-}
 
 #[cfg(test)]
 mod tests {

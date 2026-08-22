@@ -40,7 +40,26 @@ fn main() {
 
 	let solver = Solver::<MAX_LEVEL>::new(attacker, &target);
 	let path = solver.path();
-	print_path(&solver, &path);
+
+	println!("Optimal leveling path 1/1 -> {MAX_LEVEL}/{MAX_LEVEL} (minimizes sum of exp / dps):");
+	let mut total = 0.0f64;
+	for step in solver.iter(&path) {
+		// The step's dist and dps are stored on the destination point; the
+		// DPS was measured in the state before leveling its skill.
+		let time = step.point.dist - total;
+		total = step.point.dist;
+
+		println!(
+			"att={:02} str={:02}  step={:>12.4}  total={:>12.4}  {:>10} dps={:.4}",
+			step.attack,
+			step.strength,
+			time,
+			total,
+			step.skill.style_name(),
+			step.point.dps
+		);
+	}
+	println!("Total time: {:.4}", total);
 }
 
 #[cfg(test)]

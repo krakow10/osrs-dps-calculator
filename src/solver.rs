@@ -151,6 +151,12 @@ impl Path {
 		PathIter(self.skills.iter())
 	}
 }
+impl FromIterator<Skill> for Path {
+	fn from_iter<T: IntoIterator<Item = Skill>>(iter: T) -> Self {
+		let skills = iter.into_iter().collect();
+		Self { skills }
+	}
+}
 
 /// An iterator over a path's level-ups, one [`Skill`] per level-up, created
 /// by [`Path::iter`].

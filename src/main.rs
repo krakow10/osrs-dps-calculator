@@ -59,12 +59,25 @@ fn main() {
 		.map(Step::time)
 		.sum();
 
+	// what if you alternate leveling attack and strength?
+	let path_alt = Path::from_iter([Skill::Attack, Skill::Strength].repeat(98));
+	let time_alt: f64 = path_alt
+		.iter()
+		.levels()
+		.steps(attacker_bis, &ROCK_CRAB)
+		.map(Step::time)
+		.sum();
+
 	println!(
-		"rune scim time = {:.1}s
-bis time = {:.1}s
-rune scim path is {:.1}% worse",
-		time_rune_scim,
+		"bis time = {:.1}s
+rune scim time = {:.1}s
+rune scim path is {:.1}% worse
+alt time = {:.1}s
+alt path is {:.1}% worse",
 		time_bis,
+		time_rune_scim,
 		100.0 * (time_rune_scim / time_bis - 1.0),
+		time_alt,
+		100.0 * (time_alt / time_bis - 1.0),
 	);
 }

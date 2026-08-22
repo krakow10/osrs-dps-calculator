@@ -6,7 +6,7 @@ const MAX_LEVEL: usize = 99;
 /// The attacker at the given levels and style: no boosts, no prayers, no
 /// void, no gear bonus, wielding the strongest weapon in `WEAPONS` that the
 /// attack level allows.
-fn attacker(levels: Levels, attack_style: AttackStyle) -> Attacker {
+fn attacker_bis(levels: Levels, attack_style: AttackStyle) -> Attacker {
 	let weapon = WEAPONS
 		.iter()
 		.rev()
@@ -27,39 +27,45 @@ fn attacker(levels: Levels, attack_style: AttackStyle) -> Attacker {
 	}
 }
 
-fn test_target() -> NpcTarget {
-	// PvM: NPC with 1 def and 0 def bonus.
-	NpcTarget {
-		defence: 1,
-		defence_bonus: 0,
+const fn attacker_rune_scim(levels: Levels, attack_style: AttackStyle) -> Attacker {
+	Attacker {
+		strength: levels.strength,
+		attack: levels.attack,
+		strength_boost: 0,
+		attack_boost: 0,
+		strength_prayer: StrengthPrayer::None,
+		attack_prayer: AttackPrayer::None,
+		weapon: RUNE_SCIMITAR,
+		attack_style,
+		void: false,
+		gear_bonus: GearBonus::None,
 	}
 }
 
+const ROCK_CRAB: NpcTarget = NpcTarget {
+	defence: 1,
+	defence_bonus: 0,
+};
+
 fn main() {
-	let target = test_target();
+	let solver_rune_scim = Solver::<MAX_LEVEL>::new(attacker_rune_scim, &ROCK_CRAB);
+	let solver_bis = Solver::<MAX_LEVEL>::new(attacker_bis, &ROCK_CRAB);
 
-	let solver = Solver::<MAX_LEVEL>::new(attacker, &target);
-	let path = solver.path();
+	let path_rune_scim = solver_rune_scim.path();
+	let path_bis = solver_bis.path();
 
-	println!("Optimal leveling path 1/1 -> {MAX_LEVEL}/{MAX_LEVEL} (minimizes sum of exp / dps):");
-	let mut total = 0.0f64;
-	for step in solver.iter(&path) {
-		// The step's dist and dps are stored on the destination point; the
-		// DPS was measured in the state before leveling its skill.
-		let time = step.point.dist - total;
-		total = step.point.dist;
+	// How does the rune scim path rate on the BIS level up solver's figures?
+	let time_rune_scim: f64 = solver_bis.iter(&path_rune_scim).map(Step::time).sum();
+	let time_bis: f64 = solver_bis.iter(&path_bis).map(Step::time).sum();
 
-		println!(
-			"att={:02} str={:02}  step={:>12.4}  total={:>12.4}  {:>10} dps={:.4}",
-			step.attack,
-			step.strength,
-			time,
-			total,
-			step.skill.style_name(),
-			step.point.dps
-		);
-	}
-	println!("Total time: {:.4}", total);
+	println!(
+		"rune scim time = {:.1}s
+bis time = {:.1}s
+rune scim path is {:.1}% worse",
+		time_rune_scim,
+		time_bis,
+		100.0 * (time_rune_scim / time_bis - 1.0),
+	);
 }
 
 #[cfg(test)]
@@ -71,7 +77,7 @@ mod tests {
 	};
 
 	fn weapon(attack: u8) -> WeaponStats {
-		attacker(
+		attacker_bis(
 			Levels {
 				attack,
 				strength: 1,

@@ -34,31 +34,35 @@ pub struct Levels {
 	pub strength: u8,
 }
 
-/// One step of a leveling path: the skill leveled up, the levels after the
-/// level-up, and the DPS the level-up is priced at.
+impl Levels {
+	/// The level of `skill` in these levels.
+	pub fn skill_level(self, skill: Skill) -> u8 {
+		match skill {
+			Skill::Attack => self.attack,
+			Skill::Strength => self.strength,
+		}
+	}
+}
+
+/// One level-up of a path, priced: the skill leveled up, the levels before
+/// the level-up, and the DPS the level-up is priced at.
 #[derive(Clone, Copy, Debug)]
 pub struct Step {
 	/// The skill leveled up.
 	pub skill: Skill,
-	/// The attack level after the level-up.
-	pub attack: u8,
-	/// The strength level after the level-up.
-	pub strength: u8,
-	/// The DPS the level-up is priced at: the DPS of the levels before the
-	/// level-up, in the skill's training style.
+	/// The levels before the level-up.
+	pub levels: Levels,
+	/// The DPS the level-up is priced at: the DPS of `levels`, in the skill's
+	/// training style.
 	pub dps: f64,
 }
 
 impl Step {
-	/// The time spent on this step: the experience gained by the level-up,
-	/// priced at the step's DPS. This holds for any valid path through the
-	/// grid, not just the solver's own optimum.
+	/// The time spent on this level-up: the experience needed for it, priced
+	/// at the step's DPS. This holds for any valid path through the grid, not
+	/// just the solver's own optimum.
 	pub fn time(self) -> f64 {
-		let level = match self.skill {
-			Skill::Attack => self.attack - 1,
-			Skill::Strength => self.strength - 1,
-		};
-		let exp_gain = LEVEL_EXP_TABLE[level as usize] as f64;
+		let exp_gain = LEVEL_EXP_TABLE[self.levels.skill_level(self.skill) as usize] as f64;
 		exp_gain / self.dps
 	}
 }
@@ -127,61 +131,102 @@ impl Path {
 		Path { skills }
 	}
 
-	/// Iterate over the path from 1/1, one [`Step`] per level-up.
+	/// Iterate over the path from 1/1, one [`Skill`] per level-up, in order.
 	///
-	/// Each step is priced at the DPS of `attacker` at the path's current
-	/// levels, in the step's training style, so the same path can be priced
-	/// with a different `attacker` or `target`.
-	pub fn iter<'a, F, T>(&'a self, attacker: F, target: &'a T) -> PathIter<'a, F, T>
-	where
-		F: Fn(Levels, AttackStyle) -> Attacker,
-		T: Target,
-	{
-		PathIter {
-			path: self.skills.iter(),
-			attacker,
-			target,
-			attack: 1,
-			strength: 1,
+	/// Chain [`PathIter::levels`] to pair each level-up with the levels
+	/// before it, then [`LevelsIter::steps`] to price each at a DPS and
+	/// derive times.
+	pub fn iter(&self) -> PathIter<'_> {
+		PathIter(self.skills.iter())
+	}
+}
+
+/// An iterator over a path's level-ups, one [`Skill`] per level-up, created
+/// by [`Path::iter`].
+pub struct PathIter<'a>(core::slice::Iter<'a, Skill>);
+
+impl<'a> Iterator for PathIter<'a> {
+	type Item = Skill;
+
+	fn next(&mut self) -> Option<Skill> {
+		self.0.next().copied()
+	}
+}
+
+impl<'a> PathIter<'a> {
+	/// Pair each level-up with the levels before it.
+	pub fn levels(self) -> LevelsIter<'a> {
+		LevelsIter {
+			path: self.0,
+			levels: Levels {
+				attack: 1,
+				strength: 1,
+			},
 		}
 	}
 }
 
-/// Iterator over the steps of a leveling path, one [`Step`] per level-up.
-pub struct PathIter<'a, F, T> {
+/// An iterator over a path's level-ups, one (`Skill`, `Levels`) pair per
+/// level-up: the skill leveled up and the levels before the level-up, created
+/// by [`PathIter::levels`].
+pub struct LevelsIter<'a> {
 	path: core::slice::Iter<'a, Skill>,
-	attacker: F,
-	target: &'a T,
-	/// The path's current levels before the next step; each step raises one
-	/// of them by one.
-	attack: u8,
-	strength: u8,
+	/// The path's current levels before the next level-up; each level-up
+	/// raises one of them by one.
+	levels: Levels,
 }
 
-impl<'a, F, T> Iterator for PathIter<'a, F, T>
+impl<'a> Iterator for LevelsIter<'a> {
+	type Item = (Skill, Levels);
+
+	fn next(&mut self) -> Option<(Skill, Levels)> {
+		let skill = *self.path.next()?;
+		let levels = self.levels;
+		match skill {
+			Skill::Attack => self.levels.attack += 1,
+			Skill::Strength => self.levels.strength += 1,
+		}
+		Some((skill, levels))
+	}
+}
+
+impl<'a> LevelsIter<'a> {
+	/// Price each level-up at the DPS of `attacker` against `target` at the
+	/// levels before it, in the skill's training style, yielding one [`Step`]
+	/// per level-up. The same path can be priced with a different `attacker`
+	/// or `target`.
+	pub fn steps<'t, F, T>(self, attacker: F, target: &'t T) -> StepIter<'a, 't, F, T>
+	where
+		F: Fn(Levels, AttackStyle) -> Attacker,
+		T: Target,
+	{
+		StepIter {
+			path: self,
+			attacker,
+			target,
+		}
+	}
+}
+
+/// An iterator over a path's priced level-ups, one [`Step`] per level-up,
+/// created by [`LevelsIter::steps`].
+pub struct StepIter<'a, 't, F, T> {
+	path: LevelsIter<'a>,
+	attacker: F,
+	target: &'t T,
+}
+
+impl<'a, 't, F, T> Iterator for StepIter<'a, 't, F, T>
 where
 	F: Fn(Levels, AttackStyle) -> Attacker,
 	T: Target,
 {
 	type Item = Step;
 
-	fn next(&mut self) -> Option<Self::Item> {
-		let skill = *self.path.next()?;
-		let levels = Levels {
-			attack: self.attack,
-			strength: self.strength,
-		};
+	fn next(&mut self) -> Option<Step> {
+		let (skill, levels) = self.path.next()?;
 		let dps = dps_of(&self.attacker, self.target, levels, skill.style());
-		match skill {
-			Skill::Attack => self.attack += 1,
-			Skill::Strength => self.strength += 1,
-		};
-		Some(Step {
-			skill,
-			attack: self.attack,
-			strength: self.strength,
-			dps,
-		})
+		Some(Step { skill, levels, dps })
 	}
 }
 
@@ -206,12 +251,8 @@ fn step_time<T: Target, F: Fn(Levels, AttackStyle) -> Attacker>(
 	levels: Levels,
 	skill: Skill,
 ) -> f64 {
-	let level = match skill {
-		Skill::Attack => levels.attack,
-		Skill::Strength => levels.strength,
-	};
-	let exp_gain = LEVEL_EXP_TABLE[level as usize] as f64;
-	exp_gain / dps_of(attacker, target, levels, skill.style())
+	let dps = dps_of(attacker, target, levels, skill.style());
+	Step { skill, levels, dps }.time()
 }
 
 /// The DPS of the attacker at the given levels and attack style, against
@@ -332,22 +373,34 @@ mod tests {
 		rec(1, 1, MAX, 0.0, &test_attacker, &target, &mut best);
 
 		let path = Path::new::<MAX, _, _>(test_attacker, &target);
-		let total: f64 = path.iter(test_attacker, &target).map(Step::time).sum();
+		let total: f64 = path
+			.iter()
+			.levels()
+			.steps(test_attacker, &target)
+			.map(Step::time)
+			.sum();
 		assert!((total - best).abs() < 1e-9);
 
-		// Each step raises exactly one of the current levels by one, and
-		// the path ends at MAX/MAX.
-		let mut end = (1u8, 1);
-		for step in path.iter(test_attacker, &target) {
-			assert_eq!(
-				(step.attack, step.strength),
-				match step.skill {
-					Skill::Attack => (end.0 + 1, end.1),
-					Skill::Strength => (end.0, end.1 + 1),
-				},
-			);
-			end = (step.attack, step.strength);
+		// Replay the path from 1/1: each level-up is priced from the current
+		// levels, and the path ends at MAX/MAX. No attacker or target needed
+		// for this.
+		let mut current = Levels {
+			attack: 1,
+			strength: 1,
+		};
+		for (skill, levels) in path.iter().levels() {
+			assert_eq!(levels, current);
+			match skill {
+				Skill::Attack => current.attack += 1,
+				Skill::Strength => current.strength += 1,
+			}
 		}
-		assert_eq!(end, (MAX as u8, MAX as u8));
+		assert_eq!(
+			current,
+			Levels {
+				attack: MAX as u8,
+				strength: MAX as u8,
+			},
+		);
 	}
 }

@@ -232,22 +232,18 @@ mod tests {
 
 	#[test]
 	fn test_exp_table() {
-		/// `t[l]` is the total experience needed to reach level `l` from level 1.
-		fn level_exp_table() -> [u32; 100] {
-			let mut t = [0u32; 100];
-			let mut sum = 0u32;
-			for l in 1..=99 {
-				t[l] = sum / 4;
-				sum += (l as f64 + 300.0 * 2.0f64.powf(l as f64 / 7.0)) as u32;
-			}
-			t
+		// `total` is the experience needed to reach level `l` from level 1: a
+		// floor of the running sum `sum` of the raw per-level experience.
+		// `LEVEL_EXP_TABLE[l]` is the diff of consecutive totals, so each entry
+		// can be checked directly as the loop advances the sum.
+		let mut sum = 0u32;
+		let mut prev_total = 0u32;
+		for l in 1..=99 {
+			let total = sum / 4;
+			assert_eq!(total - prev_total, LEVEL_EXP_TABLE[l - 1]);
+			sum += (l as f64 + 300.0 * 2.0f64.powf(l as f64 / 7.0)) as u32;
+			prev_total = total;
 		}
-		assert!(
-			level_exp_table()
-				.array_windows()
-				.enumerate()
-				.all(|(i, &[a, b])| b - a == LEVEL_EXP_TABLE[i])
-		);
 	}
 
 	/// The test attacker: the fixed setup, wielding the strongest weapon in

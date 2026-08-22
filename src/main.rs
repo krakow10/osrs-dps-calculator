@@ -1,7 +1,4 @@
-use osrs_dps_calculator::{
-	AttackPrayer, AttackStyle, Attacker, GearBonus, NpcTarget, StrengthPrayer, WEAPONS,
-	solver::{Levels, Solver, print_path},
-};
+use osrs_dps_calculator::*;
 
 /// Highest level we care about for attack and strength.
 const MAX_LEVEL: usize = 99;

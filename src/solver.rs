@@ -34,162 +34,155 @@ pub struct Levels {
 	pub strength: u8,
 }
 
-/// A node in the solved grid.
+/// One step of a leveling path: the skill leveled up, the levels after the
+/// level-up, and the DPS the level-up is priced at.
 #[derive(Clone, Copy, Debug)]
-pub struct GridPoint {
-	/// The skill leveled up to reach this node.
-	pub came: Skill,
-	/// The minimum total time to reach this node from 1/1.
-	pub dist: f64,
-	/// The DPS at which the level-up into this node was priced.
-	pub dps: f64,
-}
-
-/// The solved leveling grid: the minimum total time to reach each
-/// (attack, strength) node from 1/1, the skill that was leveled up to
-/// reach it, and the DPS the level-up was priced at.
-pub struct Solver<const MAX: usize> {
-	/// `points[a - 1][s - 1]` is node (a, s).
-	points: [[GridPoint; MAX]; MAX],
-}
-
-/// One step of a leveling path: the grid point the level-up lands on and
-/// the destination's levels.
-#[derive(Clone, Copy, Debug)]
-pub struct Step<'a> {
+pub struct Step {
 	/// The skill leveled up.
 	pub skill: Skill,
 	/// The attack level after the level-up.
 	pub attack: u8,
 	/// The strength level after the level-up.
 	pub strength: u8,
-	/// The point the level-up lands on.
-	pub point: &'a GridPoint,
+	/// The DPS the level-up is priced at: the DPS of the levels before the
+	/// level-up, in the skill's training style.
+	pub dps: f64,
 }
 
-impl Step<'_> {
+impl Step {
 	/// The time spent on this step: the experience gained by the level-up,
-	/// priced at the DPS stored on the point it lands on. This holds for any
-	/// valid path through the grid, not just the solver's own optimum.
+	/// priced at the step's DPS. This holds for any valid path through the
+	/// grid, not just the solver's own optimum.
 	pub fn time(self) -> f64 {
 		let level = match self.skill {
 			Skill::Attack => self.attack - 1,
 			Skill::Strength => self.strength - 1,
 		};
 		let exp_gain = LEVEL_EXP_TABLE[level as usize] as f64;
-		exp_gain / self.point.dps
+		exp_gain / self.dps
 	}
 }
 
-/// Iterator over the steps of a leveling path, one [`Step`] per level-up.
-pub struct GridPointIter<'a, const MAX: usize> {
-	solver: &'a Solver<MAX>,
-	path: core::slice::Iter<'a, Skill>,
-	/// The path's current levels; each step raises one of them by one.
-	attack: u8,
-	strength: u8,
+/// The optimal sequence of skill level-ups from 1/1 to MAX/MAX, in order.
+pub struct Path {
+	skills: Vec<Skill>,
 }
 
-impl<const MAX: usize> Solver<MAX> {
-	/// Find the attack/strength leveling path from 1/1 to MAX/MAX that
-	/// minimizes the total time, and return the solved grid.
+impl Path {
+	/// Iterate over the path from 1/1, one [`Step`] per level-up.
 	///
-	/// The time spent on each level-up is proportional to the exp needed
-	/// for that level divided by the DPS at the state you're in while
-	/// leveling it up. The attack style used while leveling matters: attack
-	/// can only be leveled with the Accurate style and strength with the
-	/// Aggressive style, so each level-up edge is priced at the DPS of the
-	/// style that trains it.
-	///
-	/// The leveling graph is a DAG (edges only increase attack or
-	/// strength), so a topological-order DP finds the optimum exactly.
-	pub fn new<T: Target, F: Fn(Levels, AttackStyle) -> Attacker>(attacker: F, target: &T) -> Self {
-		let levels = |a: usize, s: usize| Levels {
-			attack: a as u8,
-			strength: s as u8,
-		};
-		let mut solver = Solver {
-			points: [[GridPoint {
-				came: Skill::Attack,
-				dist: f64::INFINITY,
-				dps: 0.0,
-			}; MAX]; MAX],
-		};
-		solver.points[0][0].dist = 0.0;
-
-		for a in 1..=MAX {
-			for s in 1..=MAX {
-				let d = solver.points[a - 1][s - 1].dist;
-				for skill in [Skill::Attack, Skill::Strength] {
-					let (attack, strength, level) = match skill {
-						Skill::Attack => (a + 1, s, a),
-						Skill::Strength => (a, s + 1, s),
-					};
-					if attack > MAX || strength > MAX {
-						continue;
-					}
-					let dps = dps_of(&attacker, target, levels(a, s), skill.style());
-					let nd = d + LEVEL_EXP_TABLE[level] as f64 / dps;
-					let dest = &mut solver.points[attack - 1][strength - 1];
-					if nd < dest.dist {
-						dest.dist = nd;
-						dest.came = skill;
-						dest.dps = dps;
-					}
-				}
-			}
-		}
-
-		solver
-	}
-
-	/// The optimal sequence of skill level-ups from 1/1 to MAX/MAX, in order.
-	pub fn path(&self) -> Vec<Skill> {
-		let mut path = Vec::with_capacity(2 * (MAX - 1));
-		let (mut a, mut s) = (MAX, MAX);
-		while (a, s) != (1, 1) {
-			let skill = self.points[a - 1][s - 1].came;
-			(a, s) = match skill {
-				Skill::Attack => (a - 1, s),
-				Skill::Strength => (a, s - 1),
-			};
-			path.push(skill);
-		}
-		path.reverse();
-		path
-	}
-
-	/// Iterate over the steps of `path` from 1/1, one [`Step`] per level-up.
-	///
-	/// `path` must be a valid 1/1 -> MAX/MAX path, such as the one returned
-	/// by [`Solver::path`].
-	pub fn iter<'a>(&'a self, path: &'a [Skill]) -> GridPointIter<'a, MAX> {
-		GridPointIter {
-			solver: self,
-			path: path.iter(),
+	/// Each step is priced at the DPS of `attacker` at the path's current
+	/// levels, in the step's training style, so the same path can be priced
+	/// with a different `attacker` or `target`.
+	pub fn iter<'a, F, T>(&'a self, attacker: F, target: &'a T) -> PathIter<'a, F, T>
+	where
+		F: Fn(Levels, AttackStyle) -> Attacker,
+		T: Target,
+	{
+		PathIter {
+			path: self.skills.iter(),
+			attacker,
+			target,
 			attack: 1,
 			strength: 1,
 		}
 	}
 }
 
-impl<'a, const MAX: usize> Iterator for GridPointIter<'a, MAX> {
-	type Item = Step<'a>;
+/// Iterator over the steps of a leveling path, one [`Step`] per level-up.
+pub struct PathIter<'a, F, T> {
+	path: core::slice::Iter<'a, Skill>,
+	attacker: F,
+	target: &'a T,
+	/// The path's current levels before the next step; each step raises one
+	/// of them by one.
+	attack: u8,
+	strength: u8,
+}
+
+impl<'a, F, T> Iterator for PathIter<'a, F, T>
+where
+	F: Fn(Levels, AttackStyle) -> Attacker,
+	T: Target,
+{
+	type Item = Step;
 
 	fn next(&mut self) -> Option<Self::Item> {
 		let skill = *self.path.next()?;
+		let levels = Levels {
+			attack: self.attack,
+			strength: self.strength,
+		};
+		let dps = dps_of(&self.attacker, self.target, levels, skill.style());
 		match skill {
 			Skill::Attack => self.attack += 1,
 			Skill::Strength => self.strength += 1,
 		};
-		let point = &self.solver.points[self.attack as usize - 1][self.strength as usize - 1];
 		Some(Step {
 			skill,
 			attack: self.attack,
 			strength: self.strength,
-			point,
+			dps,
 		})
 	}
+}
+
+/// Find the attack/strength leveling path from 1/1 to MAX/MAX that
+/// minimizes the total time, and return it.
+///
+/// The time spent on each level-up is proportional to the exp needed
+/// for that level divided by the DPS at the state you're in while
+/// leveling it up. The attack style used while leveling matters: attack
+/// can only be leveled with the Accurate style and strength with the
+/// Aggressive style, so each level-up edge is priced at the DPS of the
+/// style that trains it.
+///
+/// The leveling graph is a DAG (edges only increase attack or
+/// strength), so a topological-order DP finds the optimum exactly.
+pub fn solve<const MAX: usize, T: Target, F: Fn(Levels, AttackStyle) -> Attacker>(
+	attacker: F,
+	target: &T,
+) -> Path {
+	let levels = |a: usize, s: usize| Levels {
+		attack: a as u8,
+		strength: s as u8,
+	};
+	let mut came = [[Skill::Attack; MAX]; MAX];
+	let mut dist = [[f64::INFINITY; MAX]; MAX];
+	dist[0][0] = 0.0;
+
+	for a in 1..=MAX {
+		for s in 1..=MAX {
+			let d = dist[a - 1][s - 1];
+			for skill in [Skill::Attack, Skill::Strength] {
+				let (attack, strength) = match skill {
+					Skill::Attack => (a + 1, s),
+					Skill::Strength => (a, s + 1),
+				};
+				if attack > MAX || strength > MAX {
+					continue;
+				}
+				let nd = d + step_time(&attacker, target, levels(a, s), skill);
+				if nd < dist[attack - 1][strength - 1] {
+					dist[attack - 1][strength - 1] = nd;
+					came[attack - 1][strength - 1] = skill;
+				}
+			}
+		}
+	}
+
+	let mut skills = Vec::with_capacity(2 * (MAX - 1));
+	let (mut a, mut s) = (MAX, MAX);
+	while (a, s) != (1, 1) {
+		let skill = came[a - 1][s - 1];
+		(a, s) = match skill {
+			Skill::Attack => (a - 1, s),
+			Skill::Strength => (a, s - 1),
+		};
+		skills.push(skill);
+	}
+	skills.reverse();
+	Path { skills }
 }
 
 /// `LEVEL_EXP_TABLE[l]` is the experience needed to go from level `l` to
@@ -203,6 +196,23 @@ pub const LEVEL_EXP_TABLE: [u32; 99] = [
 	169608, 187260, 206750, 228269, 252027, 278259, 307221, 339198, 374502, 413482, 456519, 504037,
 	556499, 614422, 678376, 748985, 826944, 913019, 1008052, 1112977, 1228825,
 ];
+
+/// The time to level up `skill` from the given levels: the experience
+/// needed for the level-up, divided by the DPS of `attacker` against
+/// `target` in the skill's training style at those levels.
+fn step_time<T: Target, F: Fn(Levels, AttackStyle) -> Attacker>(
+	attacker: &F,
+	target: &T,
+	levels: Levels,
+	skill: Skill,
+) -> f64 {
+	let level = match skill {
+		Skill::Attack => levels.attack,
+		Skill::Strength => levels.strength,
+	};
+	let exp_gain = LEVEL_EXP_TABLE[level as usize] as f64;
+	exp_gain / dps_of(attacker, target, levels, skill.style())
+}
 
 /// The DPS of the attacker at the given levels and attack style, against
 /// the target.
@@ -272,14 +282,11 @@ mod tests {
 	}
 
 	/// Exhaustive check of the optimum over every monotone path on a small
-	/// grid, as an independent verification of `Solver::new`'s DP.
+	/// grid, as an independent verification of `solve`'s DP.
 	#[test]
 	fn solver_matches_brute_force() {
 		const MAX: usize = 6;
 		let target = test_target();
-
-		let solver = Solver::<MAX>::new(test_attacker, &target);
-		let total = solver.points[MAX - 1][MAX - 1].dist;
 
 		fn rec<T: Target, F: Fn(Levels, AttackStyle) -> Attacker>(
 			a: usize,
@@ -298,7 +305,7 @@ mod tests {
 				attack: a as u8,
 				strength: s as u8,
 			};
-			// Mirror `Solver::new`: attack level-ups are priced at the accurate style,
+			// Mirror `solve`: attack level-ups are priced at the accurate style,
 			// strength level-ups at the aggressive style.
 			if a < max {
 				let dps = dps_of(attacker, target, levels, Skill::Attack.style());
@@ -327,21 +334,22 @@ mod tests {
 		}
 		let mut best = f64::INFINITY;
 		rec(1, 1, MAX, 0.0, &test_attacker, &target, &mut best);
+
+		let path = solve::<MAX, _, _>(test_attacker, &target);
+		let total: f64 = path.iter(test_attacker, &target).map(Step::time).sum();
 		assert!((total - best).abs() < 1e-9);
 
-		// Each step raises exactly one skill by one, `total` is the running
-		// sum of `time` from the 1/1 start, and the path ends at MAX/MAX.
-		let path = solver.path();
+		// Each step raises exactly one of the current levels by one, and
+		// the path ends at MAX/MAX.
 		let mut end = (1u8, 1);
-		let mut it = solver.iter(&path);
-		let mut last = it.next().unwrap();
-		let mut running = last.point.dist;
-		for step in it {
-			let step_total = step.point.dist;
-			let step_time = step.point.dist - last.point.dist;
-			assert!((step_total - running - step_time).abs() < 1e-9);
-			running = step_total;
-			last = step;
+		for step in path.iter(test_attacker, &target) {
+			assert_eq!(
+				(step.attack, step.strength),
+				match step.skill {
+					Skill::Attack => (end.0 + 1, end.1),
+					Skill::Strength => (end.0, end.1 + 1),
+				},
+			);
 			end = (step.attack, step.strength);
 		}
 		assert_eq!(end, (MAX as u8, MAX as u8));

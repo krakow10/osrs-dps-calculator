@@ -48,15 +48,12 @@ const ROCK_CRAB: NpcTarget = NpcTarget {
 };
 
 fn main() {
-	let solver_rune_scim = Solver::<MAX_LEVEL>::new(attacker_rune_scim, &ROCK_CRAB);
-	let solver_bis = Solver::<MAX_LEVEL>::new(attacker_bis, &ROCK_CRAB);
-
-	let path_rune_scim = solver_rune_scim.path();
-	let path_bis = solver_bis.path();
+	let path_rune_scim = solve::<MAX_LEVEL, _, _>(attacker_rune_scim, &ROCK_CRAB);
+	let path_bis = solve::<MAX_LEVEL, _, _>(attacker_bis, &ROCK_CRAB);
 
 	// How does the rune scim path rate on the BIS level up solver's figures?
-	let time_rune_scim: f64 = solver_bis.iter(&path_rune_scim).map(Step::time).sum();
-	let time_bis: f64 = solver_bis.iter(&path_bis).map(Step::time).sum();
+	let time_rune_scim: f64 = path_rune_scim.iter(attacker_bis, &ROCK_CRAB).map(Step::time).sum();
+	let time_bis: f64 = path_bis.iter(attacker_bis, &ROCK_CRAB).map(Step::time).sum();
 
 	println!(
 		"rune scim time = {:.1}s

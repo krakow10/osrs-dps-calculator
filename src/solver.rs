@@ -108,7 +108,9 @@ impl Path {
 					if attack > MAX || strength > MAX {
 						continue;
 					}
-					let nd = d + step_time(&attacker, target, levels(a, s), skill);
+					let levels = levels(a, s);
+					let dps = dps_of(&attacker, target, levels, skill.style());
+					let nd = d + Step { skill, levels, dps }.time();
 					if nd < dist[attack - 1][strength - 1] {
 						dist[attack - 1][strength - 1] = nd;
 						came[attack - 1][strength - 1] = skill;
@@ -241,19 +243,6 @@ pub const LEVEL_EXP_TABLE: [u32; 99] = [
 	169608, 187260, 206750, 228269, 252027, 278259, 307221, 339198, 374502, 413482, 456519, 504037,
 	556499, 614422, 678376, 748985, 826944, 913019, 1008052, 1112977, 1228825,
 ];
-
-/// The time to level up `skill` from the given levels: the experience
-/// needed for the level-up, divided by the DPS of `attacker` against
-/// `target` in the skill's training style at those levels.
-fn step_time<T: Target, F: Fn(Levels, AttackStyle) -> Attacker>(
-	attacker: &F,
-	target: &T,
-	levels: Levels,
-	skill: Skill,
-) -> f64 {
-	let dps = dps_of(attacker, target, levels, skill.style());
-	Step { skill, levels, dps }.time()
-}
 
 /// The DPS of the attacker at the given levels and attack style, against
 /// the target.

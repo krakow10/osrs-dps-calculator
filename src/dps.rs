@@ -20,7 +20,7 @@ impl MeleeDps {
 	/// Calculate melee DPS using the formulas from the OSRS wiki.
 	pub fn calculate<T: Target>(attacker: &Attacker, target: &T) -> MeleeDps {
 		// Salve amulet and slayer helm bonuses only work on monsters.
-		let gear = if T::ACCEPTS_GEAR_BONUS {
+		let gear_bonus = if T::ACCEPTS_GEAR_BONUS {
 			attacker.gear_bonus
 		} else {
 			GearBonus::None
@@ -41,10 +41,12 @@ impl MeleeDps {
 
 		// --- Step two: max hit ------------------------------------------------
 		// eff_strength * (str bonus + 64) + 320, / 640, floor, then gear bonus, floor.
-		let max_hit_base = ((effective_strength as f64 * (attacker.weapon.strength as f64 + 64.0)
-			+ 320.0) / 640.0)
-			.floor() as u64;
-		let mut max_hit = (max_hit_base as f64 * gear.multiplier()).floor() as u64;
+		// The strength bonus is the total of weapon plus gear.
+		let strength_bonus = attacker.weapon.strength + attacker.gear.strength;
+		let max_hit_base =
+			((effective_strength as f64 * (strength_bonus as f64 + 64.0) + 320.0) / 640.0).floor()
+				as u64;
+		let mut max_hit = (max_hit_base as f64 * gear_bonus.multiplier()).floor() as u64;
 		if target.protect_from_melee() {
 			max_hit = (max_hit as f64 * 0.6).floor() as u64;
 		}
@@ -65,10 +67,12 @@ impl MeleeDps {
 		);
 
 		// --- Step four: attack roll --------------------------------------------
-		let attack_roll = (effective_attack as f64
-			* (attacker.weapon.attack_bonus(attacker.attack_style) as f64 + 64.0)
-			* gear.multiplier())
-		.floor() as u32;
+		// The hit roll uses the total attack bonus: weapon plus gear.
+		let attack_bonus = attacker.weapon.attack_bonus(attacker.attack_style)
+			+ attacker.gear.attack_bonus(attacker.attack_style);
+		let attack_roll =
+			(effective_attack as f64 * (attack_bonus as f64 + 64.0) * gear_bonus.multiplier())
+				.floor() as u32;
 
 		// --- Steps five & six: defence roll ------------------------------------
 		let (effective_defence, defence_roll) = target.defence();
@@ -152,8 +156,8 @@ impl std::fmt::Display for MeleeDps {
 mod tests {
 	use super::MeleeDps;
 	use crate::{
-		AttackPrayer, AttackStyle, Attacker, BLADE_OF_SAELDOR, DefencePrayer, GameTicks, GearBonus,
-		NpcTarget, PlayerTarget, StrengthPrayer, WeaponStats,
+		AttackPrayer, AttackStyle, Attacker, BLADE_OF_SAELDOR, DefencePrayer, GameTicks, GearStats,
+		GearBonus, NpcTarget, PlayerTarget, StrengthPrayer, WeaponStats,
 	};
 
 	#[test]
@@ -177,6 +181,7 @@ mod tests {
 			attack_style: AttackStyle::Aggressive,
 			void: false,
 			gear_bonus: GearBonus::None,
+			gear: GearStats::NONE,
 		};
 		// NPC with 50 def, 40 def bonus.
 		let target = NpcTarget {
@@ -227,6 +232,7 @@ mod tests {
 			void: false,
 			// Salve bonuses don't apply to player targets, so this must be ignored.
 			gear_bonus: GearBonus::EnhancedSalve,
+			gear: GearStats::NONE,
 		};
 		// Player target: 99 def +15, piety (1.20), defensive style, 100 def bonus, PFM.
 		let target = PlayerTarget {
@@ -270,6 +276,7 @@ mod tests {
 			attack_style: AttackStyle::Aggressive,
 			void: false,
 			gear_bonus: GearBonus::None,
+			gear: GearStats::NONE,
 		};
 		let target = NpcTarget {
 			defence: 1,
@@ -297,6 +304,7 @@ mod tests {
 			attack_style: AttackStyle::Aggressive,
 			void: true,
 			gear_bonus: GearBonus::None,
+			gear: GearStats::NONE,
 		};
 		let target = NpcTarget {
 			defence: 1,
@@ -332,6 +340,7 @@ mod tests {
 			attack_style: AttackStyle::Controlled,
 			void: true,
 			gear_bonus: GearBonus::None,
+			gear: GearStats::NONE,
 		};
 		let target = NpcTarget {
 			defence: 1,
@@ -344,5 +353,45 @@ mod tests {
 		assert_eq!(r.effective_attack, 118);
 		// attack roll: 118 * (0 + 64) = 7552
 		assert_eq!(r.attack_roll, 7_552);
+	}
+
+	#[test]
+	fn gear_attack_bonuses_affect_the_attack_roll() {
+		// Same setup as `blade_of_saeldor_aggressive`, plus gear bonuses:
+		// 19 stab, 17 slash, 17 crush, 14 strength.
+		let mut attacker = Attacker {
+			strength: 99,
+			attack: 99,
+			strength_boost: 0,
+			attack_boost: 0,
+			strength_prayer: StrengthPrayer::None,
+			attack_prayer: AttackPrayer::None,
+			weapon: BLADE_OF_SAELDOR,
+			attack_style: AttackStyle::Aggressive,
+			void: true,
+			gear_bonus: GearBonus::None,
+			gear: GearStats {
+				stab: 19,
+				slash: 17,
+				crush: 17,
+				strength: 14,
+			},
+		};
+		let target = NpcTarget {
+			defence: 1,
+			defence_bonus: 0,
+		};
+
+		let r = MeleeDps::calculate(&attacker, &target);
+		// Aggressive uses the slash bonus: 117 * (100 + 17 + 64) = 21177
+		assert_eq!(r.attack_roll, 21_177);
+		// Max hit uses weapon plus gear strength: floor((121 * (93 + 14 + 64) + 320) / 640) = 32
+		assert_eq!(r.max_hit, 32);
+
+		// The controlled style uses the stab bonus (blade: 0, gear: 19), and
+		// gets +1 effective attack: 118 * (0 + 19 + 64) = 9794.
+		attacker.attack_style = AttackStyle::Controlled;
+		let r = MeleeDps::calculate(&attacker, &target);
+		assert_eq!(r.attack_roll, 9_794);
 	}
 }

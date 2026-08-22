@@ -18,6 +18,12 @@ fn attacker_bis(levels: Levels, attack_style: AttackStyle) -> Attacker {
 		attack_style,
 		void: false,
 		gear_bonus: GearBonus::None,
+		gear: GearStats {
+			stab: 19,
+			slash: 17,
+			crush: 17,
+			strength: 14,
+		},
 	}
 }
 
@@ -33,6 +39,12 @@ const fn attacker_rune_scim(levels: Levels, attack_style: AttackStyle) -> Attack
 		attack_style,
 		void: false,
 		gear_bonus: GearBonus::None,
+		gear: GearStats {
+			stab: 19,
+			slash: 17,
+			crush: 17,
+			strength: 14,
+		},
 	}
 }
 

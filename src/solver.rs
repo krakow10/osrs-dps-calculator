@@ -294,7 +294,7 @@ fn exp_per_second_of<T: Target, F: Fn(Levels, AttackStyle) -> Attacker>(
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::{AttackPrayer, GearBonus, NpcTarget, StrengthPrayer, WEAPONS};
+	use crate::{AttackPrayer, GearStats, GearBonus, NpcTarget, StrengthPrayer, WEAPONS};
 
 	#[test]
 	fn test_exp_table() {
@@ -332,6 +332,7 @@ mod tests {
 			attack_style: style,
 			void: false,
 			gear_bonus: GearBonus::None,
+			gear: GearStats::NONE,
 		}
 	}
 

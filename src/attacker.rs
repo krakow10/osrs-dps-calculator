@@ -38,6 +38,41 @@ impl GearBonus {
 	}
 }
 
+/// Bonuses provided by gear other than the weapon (helm, body, amulet,
+/// shield, etc.), as listed on the OSRS wiki.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GearStats {
+	/// Stab attack bonus.
+	pub stab: i32,
+	/// Slash attack bonus.
+	pub slash: i32,
+	/// Crush attack bonus.
+	pub crush: i32,
+	/// Strength bonus. Feeds into max hit, like the weapon's.
+	pub strength: i32,
+}
+
+impl GearStats {
+	/// No gear attack bonuses.
+	pub const NONE: GearStats = GearStats {
+		stab: 0,
+		slash: 0,
+		crush: 0,
+		strength: 0,
+	};
+
+	/// Total attack bonus for the given style.
+	///
+	/// Like [`WeaponStats::attack_bonus`]: the controlled style uses the stab
+	/// bonus; every other style uses the slash bonus.
+	pub fn attack_bonus(self, style: AttackStyle) -> i32 {
+		match style {
+			AttackStyle::Controlled => self.stab,
+			_ => self.slash,
+		}
+	}
+}
+
 /// Prayer boosting strength.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum StrengthPrayer {
@@ -115,6 +150,10 @@ pub struct Attacker {
 	pub attack_prayer: AttackPrayer,
 	/// The weapon being wielded.
 	pub weapon: WeaponStats,
+	/// Bonuses from gear other than the weapon slot (helm, body, amulet,
+	/// shield, etc.). The attack bonuses feed into the attack roll; the
+	/// strength bonus feeds into max hit.
+	pub gear: GearStats,
 	pub attack_style: AttackStyle,
 	/// Wearing full melee void.
 	pub void: bool,

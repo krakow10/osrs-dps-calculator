@@ -2,7 +2,7 @@
 
 Melee DPS calculator for Old School RuneScape, in Rust. Implements the formulas from the [OSRS wiki "Damage per second/Melee" page](https://oldschool.runescape.wiki/w/Damage_per_second/Melee).
 
-- **Library** — `MeleeDps::calculate(&attacker, &target)` computes DPS plus all intermediate values (effective levels, max hit, attack/defence rolls, hit chance, average damage). Supports level boosts, prayers, void, and salve/slayer gear bonuses; targets can be NPCs (`NpcTarget`) or players (`PlayerTarget`, with Protect from Melee).
+- **Library** — `MeleeDps::calculate(&attacker, &target)` computes DPS plus all intermediate values (effective levels, max hit, attack/defence rolls, hit chance, average damage). Supports level boosts, prayers, void, salve/slayer gear bonuses, and attack bonuses from gear other than the weapon slot (which affect the attack roll, not max hit); targets can be NPCs (`NpcTarget`) or players (`PlayerTarget`, with Protect from Melee).
 - **Solver** — `Path::new` finds the order of attack/strength level-ups from 1/1 to 99/99 that minimizes total time (each level's exp divided by the experience gained per second at the time it's trained: the DPS times 4, the normal experience gained per damage), via exact DP over the level grid.
 - **Binary** (`src/main.rs`) — prints the optimal leveling path, one line per level-up, for an attacker wielding the best weapon their attack level allows.
 

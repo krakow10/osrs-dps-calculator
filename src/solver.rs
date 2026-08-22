@@ -1,4 +1,4 @@
-use crate::{AttackStyle, Attacker, MeleeDps, Target, WEAPONS, WeaponStats};
+use crate::{AttackStyle, Attacker, MeleeDps, Target};
 
 /// A skill to level up. Each can only be trained with one attack style.
 #[derive(Clone, Copy, Debug)]
@@ -29,9 +29,9 @@ impl Skill {
 
 /// The attacker's attack and strength levels.
 #[derive(Clone, Copy, Debug, PartialEq)]
-struct Levels {
-	attack: u32,
-	strength: u32,
+pub struct Levels {
+	pub attack: u32,
+	pub strength: u32,
 }
 
 /// A node in the solved grid.
@@ -66,7 +66,7 @@ impl<const MAX: usize> Solver<MAX> {
 	///
 	/// The leveling graph is a DAG (edges only increase attack or
 	/// strength), so a topological-order DP finds the optimum exactly.
-	pub fn new<T: Target>(attacker: &Attacker, target: &T) -> Self {
+	pub fn new<T: Target, F: Fn(Levels, AttackStyle) -> Attacker>(attacker: F, target: &T) -> Self {
 		let level_exp = level_exp_table();
 		let exp_gain = |l: usize| (level_exp[l + 1] - level_exp[l]) as f64;
 		let levels = |a: usize, s: usize| Levels {
@@ -93,7 +93,7 @@ impl<const MAX: usize> Solver<MAX> {
 					if attack > MAX || strength > MAX {
 						continue;
 					}
-					let dps = dps_of(attacker, target, levels(a, s), skill.style());
+					let dps = dps_of(&attacker, target, levels(a, s), skill.style());
 					let nd = d + exp_gain(level) / dps;
 					let dest = &mut solver.points[attack - 1][strength - 1];
 					if nd < dest.dist {
@@ -125,18 +125,6 @@ impl<const MAX: usize> Solver<MAX> {
 	}
 }
 
-/// The strongest weapon in `WEAPONS` that can be wielded at the given
-/// attack level, so the weapon switches out as the attacker levels up
-/// attack and reaches each weapon's requirement.
-fn weapon_for_attack(attack: u32) -> WeaponStats {
-	WEAPONS
-		.iter()
-		.rev()
-		.find(|(_, min_attack)| attack >= *min_attack)
-		.map(|(stats, _)| *stats)
-		.expect("WEAPONS always contains a weapon with no level requirement")
-}
-
 /// `t[l]` is the total experience needed to reach level `l` from level 1.
 fn level_exp_table() -> [u32; 100] {
 	let mut t = [0u32; 100];
@@ -148,19 +136,15 @@ fn level_exp_table() -> [u32; 100] {
 	t
 }
 
-/// DPS at the given levels and attack style, keeping the rest of the
-/// attacker setup and target fixed. The wielded weapon is whatever the
-/// attacker can use at that attack level, so it switches out as each
-/// weapon's requirement is reached.
-fn dps_of<T: Target>(attacker: &Attacker, target: &T, levels: Levels, style: AttackStyle) -> f64 {
-	let atk = Attacker {
-		attack: levels.attack,
-		strength: levels.strength,
-		weapon: weapon_for_attack(levels.attack),
-		attack_style: style,
-		..*attacker
-	};
-	MeleeDps::calculate(&atk, target).dps
+/// The DPS of the attacker at the given levels and attack style, against
+/// the target.
+fn dps_of<T: Target, F: Fn(Levels, AttackStyle) -> Attacker>(
+	attacker: &F,
+	target: &T,
+	levels: Levels,
+	style: AttackStyle,
+) -> f64 {
+	MeleeDps::calculate(&attacker(levels, style), target).dps
 }
 
 /// Print the path one line per level-up, showing the step time, the
@@ -203,25 +187,26 @@ pub fn print_path<const MAX: usize>(solver: &Solver<MAX>, path: &[Skill]) {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::{
-		ABYSSAL_WHIP, ADAMANT_SCIMITAR, AttackPrayer, BLACK_SCIMITAR, BLADE_OF_SAELDOR,
-		DRAGON_SCIMITAR, GearBonus, IRON_SCIMITAR, MITHRIL_SCIMITAR, NpcTarget, RUNE_SCIMITAR,
-		STEEL_SCIMITAR, StrengthPrayer,
-	};
+	use crate::{AttackPrayer, GearBonus, NpcTarget, StrengthPrayer, WEAPONS};
 
-	fn base_attacker() -> Attacker {
-		// High-level melee setup: 99/99, full melee void, 44 str / 45 atk
-		// equipment bonus, 4-tick (2.4s) attack speed. The aggressive style is
-		// just the default; `dps_of` picks the style that trains each skill.
+	/// The test attacker: the fixed setup, wielding the strongest weapon in
+	/// `WEAPONS` that the attack level allows.
+	fn test_attacker(levels: Levels, style: AttackStyle) -> Attacker {
+		let weapon = WEAPONS
+			.iter()
+			.rev()
+			.find(|(_, min_attack)| levels.attack >= *min_attack)
+			.map(|(stats, _)| *stats)
+			.expect("WEAPONS always contains a weapon with no level requirement");
 		Attacker {
-			strength: 99,
-			attack: 99,
+			strength: levels.strength,
+			attack: levels.attack,
 			strength_boost: 0,
 			attack_boost: 0,
 			strength_prayer: StrengthPrayer::None,
 			attack_prayer: AttackPrayer::None,
-			weapon: RUNE_SCIMITAR,
-			attack_style: AttackStyle::Aggressive,
+			weapon,
+			attack_style: style,
 			void: false,
 			gear_bonus: GearBonus::None,
 		}
@@ -240,19 +225,18 @@ mod tests {
 	#[test]
 	fn solver_matches_brute_force() {
 		const MAX: usize = 6;
-		let attacker = base_attacker();
 		let target = test_target();
 
-		let solver = Solver::<MAX>::new(&attacker, &target);
+		let solver = Solver::<MAX>::new(test_attacker, &target);
 		let total = solver.points[MAX - 1][MAX - 1].dist;
 
-		fn rec<T: Target>(
+		fn rec<T: Target, F: Fn(Levels, AttackStyle) -> Attacker>(
 			a: usize,
 			s: usize,
 			max: usize,
 			acc: f64,
 			level_exp: &[u32; 100],
-			attacker: &Attacker,
+			attacker: &F,
 			target: &T,
 			best: &mut f64,
 		) {
@@ -296,7 +280,16 @@ mod tests {
 		}
 		let level_exp = level_exp_table();
 		let mut best = f64::INFINITY;
-		rec(1, 1, MAX, 0.0, &level_exp, &attacker, &target, &mut best);
+		rec(
+			1,
+			1,
+			MAX,
+			0.0,
+			&level_exp,
+			&test_attacker,
+			&target,
+			&mut best,
+		);
 		assert!((total - best).abs() < 1e-9);
 
 		// Each step raises exactly one skill by one, `total` is the running
@@ -320,38 +313,5 @@ mod tests {
 			running = step_total;
 		}
 		assert_eq!((a, s), (MAX, MAX));
-	}
-
-	/// The weapon switches out exactly when the attacker reaches each
-	/// weapon's required attack level.
-	#[test]
-	fn weapon_switches_at_required_attack_level() {
-		// Iron scimitar at 1, until 5 attack.
-		assert_eq!(weapon_for_attack(1), IRON_SCIMITAR);
-		assert_eq!(weapon_for_attack(4), IRON_SCIMITAR);
-		// Steel scimitar at 5, until 10 attack.
-		assert_eq!(weapon_for_attack(5), STEEL_SCIMITAR);
-		assert_eq!(weapon_for_attack(9), STEEL_SCIMITAR);
-		// Black scimitar at 10, until 20 attack.
-		assert_eq!(weapon_for_attack(10), BLACK_SCIMITAR);
-		assert_eq!(weapon_for_attack(19), BLACK_SCIMITAR);
-		// Mithril scimitar at 20, until 30 attack.
-		assert_eq!(weapon_for_attack(20), MITHRIL_SCIMITAR);
-		assert_eq!(weapon_for_attack(29), MITHRIL_SCIMITAR);
-		// Adamant scimitar at 30, until 40 attack.
-		assert_eq!(weapon_for_attack(30), ADAMANT_SCIMITAR);
-		assert_eq!(weapon_for_attack(39), ADAMANT_SCIMITAR);
-		// Rune scimitar at 40, until 60 attack.
-		assert_eq!(weapon_for_attack(40), RUNE_SCIMITAR);
-		assert_eq!(weapon_for_attack(59), RUNE_SCIMITAR);
-		// Dragon scimitar at 60, until 70 attack.
-		assert_eq!(weapon_for_attack(60), DRAGON_SCIMITAR);
-		assert_eq!(weapon_for_attack(69), DRAGON_SCIMITAR);
-		// Abyssal whip at 70, until 80 attack.
-		assert_eq!(weapon_for_attack(70), ABYSSAL_WHIP);
-		assert_eq!(weapon_for_attack(79), ABYSSAL_WHIP);
-		// Blade of Saeldor at 80.
-		assert_eq!(weapon_for_attack(80), BLADE_OF_SAELDOR);
-		assert_eq!(weapon_for_attack(99), BLADE_OF_SAELDOR);
 	}
 }

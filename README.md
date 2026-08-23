@@ -10,3 +10,5 @@ Melee DPS calculator for Old School RuneScape, in Rust. Implements the formulas 
 cargo run   # print the optimal 1/1 -> 99/99 leveling path
 cargo test
 ```
+
+Vibe coded with Qwen 3.8 27B.
